@@ -11,13 +11,12 @@ export async function POST(req) {
     console.log('Received data:', data);
 
     // Validate required fields
-    if (!data.course || !data.semester || !data.session || !Array.isArray(data.ssubjects)) {
+    if (!data.course || !data.session || !Array.isArray(data.ssubjects)) {
       return new Response(
         JSON.stringify({ 
           error: "Missing required fields", 
           received: {
             course: !!data.course,
-            semester: !!data.semester,
             session: !!data.session,
             ssubjects: Array.isArray(data.ssubjects)
           }
@@ -26,26 +25,9 @@ export async function POST(req) {
       );
     }
 
-    // Check if a session already exists for this course, semester, and session
-    const existingSession = await Sessions.findOne({
-      course: data.course,
-      semester: data.semester,
-      session: data.session
-    });
-
-    if (existingSession) {
-      return new Response(
-        JSON.stringify({
-          error: "A session already exists for this course, semester, and session"
-        }),
-        { status: 409 }
-      );
-    }
-
     // Create the session with the provided data
     const newSession = new Sessions({
       course: data.course,
-      semester: data.semester,
       session: data.session,
       ssubjects: data.ssubjects
     });

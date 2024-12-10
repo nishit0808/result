@@ -12,12 +12,8 @@ const subjectSchema = new mongoose.Schema({
 // Sessions Schema
 const sessionSchema = new mongoose.Schema({
   course: { type: mongoose.Schema.Types.ObjectId, ref: 'Courses', required: true }, // Reference to Courses schema
-  semester: { type: String, required: true }, // Semester for which this session is created
   session: { type: String, required: true }, // Academic session, e.g., "2023-2024"
   ssubjects: [subjectSchema] // Array of subjects for the session
 });
-
-// Add compound index to ensure unique combination of course, semester, and session
-sessionSchema.index({ course: 1, semester: 1, session: 1 }, { unique: true });
 
 module.exports = mongoose.models.Sessions || mongoose.model('Sessions', sessionSchema);
