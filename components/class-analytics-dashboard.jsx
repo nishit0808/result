@@ -59,10 +59,13 @@ const studentResults = [
 
 export function ClassAnalyticsDashboardComponent() {
   const [courses, setCourses] = React.useState([])
+  const [sessions, setSessions] = React.useState([])
   const [selectedClass, setSelectedClass] = React.useState("")
   const [selectedSemester, setSelectedSemester] = React.useState("")
+  const [selectedSession, setSelectedSession] = React.useState("")
   const [selectedCourseIndex, setSelectedCourseIndex] = React.useState("")
 
+  // Fetch courses on mount
   React.useEffect(() => {
     axios
       .get(`/api/course`)
@@ -72,10 +75,40 @@ export function ClassAnalyticsDashboardComponent() {
       .catch((err) => console.log(err))
   }, [])
 
+  // Update course index when class changes
   React.useEffect(() => {
     const selectedCourse = courses.findIndex((course) => course.name === selectedClass)
     setSelectedCourseIndex(selectedCourse)
+    // Reset dependent fields
+    setSelectedSemester("")
+    setSelectedSession("")
   }, [selectedClass])
+
+  // Fetch sessions when course and semester are selected
+  React.useEffect(() => {
+    const fetchSessions = async () => {
+      if (!selectedClass || !selectedSemester) {
+        setSessions([])
+        return
+      }
+
+      try {
+        const selectedCourseData = courses.find(course => course.name === selectedClass)
+        if (!selectedCourseData) return
+
+        const response = await axios.get('/api/sessions')
+        const filteredSessions = response.data
+          .filter(session => session.course._id === selectedCourseData._id)
+          .map(session => session.session)
+        
+        const uniqueSessions = [...new Set(filteredSessions)]
+        setSessions(uniqueSessions)
+      } catch (error) {
+        console.error('Error fetching sessions:', error)
+      }
+    }
+    fetchSessions()
+  }, [selectedClass, selectedSemester, courses])
 
   return (
     (<div
@@ -86,7 +119,11 @@ export function ClassAnalyticsDashboardComponent() {
             <h1
               className="text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-blue-400">Class Analytics Dashboard</h1>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Select value={selectedClass} onValueChange={setSelectedClass}>
+              <Select 
+                value={selectedClass} 
+                onValueChange={(value) => {
+                  setSelectedClass(value)
+                }}>
                 <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="Select class" />
                 </SelectTrigger>
@@ -98,7 +135,14 @@ export function ClassAnalyticsDashboardComponent() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={selectedSemester} onValueChange={setSelectedSemester}>
+
+              <Select 
+                value={selectedSemester} 
+                onValueChange={(value) => {
+                  setSelectedSemester(value)
+                  setSelectedSession("")
+                }}
+                disabled={!selectedClass}>
                 <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="Select semester" />
                 </SelectTrigger>
@@ -110,11 +154,27 @@ export function ClassAnalyticsDashboardComponent() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select
+                value={selectedSession}
+                onValueChange={setSelectedSession}
+                disabled={!selectedSemester}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="Select session" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sessions.map((session) => (
+                    <SelectItem key={session} value={session}>
+                      {session}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
-        {selectedClass && selectedSemester ? (
+        {selectedClass && selectedSemester && selectedSession ? (
           <>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white">
@@ -309,9 +369,9 @@ export function ClassAnalyticsDashboardComponent() {
           <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
             <CardContent className="flex flex-col items-center justify-center py-20">
               <BookOpen className="h-16 w-16 text-blue-500 mb-6" />
-              <h2 className="text-2xl font-semibold mb-2">Select Class and Semester</h2>
+              <h2 className="text-2xl font-semibold mb-2">Select Class, Semester and Session</h2>
               <p className="text-muted-foreground text-center max-w-sm">
-                Choose a class and semester from the dropdowns above to view the analytics dashboard.
+                Choose a class, semester and session from the dropdowns above to view the analytics dashboard.
               </p>
             </CardContent>
           </Card>

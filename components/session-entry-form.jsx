@@ -82,6 +82,14 @@ export default function SessionEntryForm() {
     }
   }
 
+  const handlesemesterChange = (e) => {
+    setSelectedSemester(e)
+  }
+
+  useEffect(() => {
+    console.log(selectedSemester)
+  }, [selectedSemester])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -165,7 +173,7 @@ export default function SessionEntryForm() {
                     <Label htmlFor="semester">Semester</Label>
                     <Select
                       value={selectedSemester}
-                      onValueChange={setSelectedSemester}
+                      onValueChange={(e) => handlesemesterChange(e)}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select Semester" />

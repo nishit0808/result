@@ -3,6 +3,7 @@ import connectDB from '../../../lib/mongoose'
 import ClassDetails from '../models/ClassDetails'
 import Sessions from '../models/Sessions'
 import StudentMarks from '../models/StudentMarks'
+import mongoose from 'mongoose'
 
 export async function GET(request) {
   try {
@@ -11,62 +12,53 @@ export async function GET(request) {
     const course = searchParams.get('course')
     const semester = searchParams.get('semester')
     const session = searchParams.get('session')
+    const student = searchParams.get('student')
 
-    console.log('Fetching class details with params:', { course, semester, session })
+    console.log('Fetching student marks with params:', { course, semester, session, student })
 
-    // Get class details (students)
-    const classDetails = await ClassDetails.findOne({
+    // Find student marks directly
+    const studentMarks = await StudentMarks.findOne({
       course,
       semester,
-      session
-    }).select('students')
+      session,
+      student
+    }).populate('course')
 
-    console.log('Class details found:', classDetails)
+    console.log('Student marks found:', studentMarks)
 
-    // Get session details (subjects with marks criteria)
-    const sessionDetails = await Sessions.findOne({
-      'course._id': course,
-      semester,
-      session
-    }).select('ssubjects')
-
-    console.log('Session details found:', sessionDetails)
-
-    if (!classDetails) {
+    if (!studentMarks) {
       return NextResponse.json(
-        { error: 'Class details not found' },
+        { error: 'Student marks not found' },
         { status: 404 }
       )
     }
 
-    if (!sessionDetails) {
-      return NextResponse.json(
-        { error: 'Session details not found' },
-        { status: 404 }
-      )
-    }
-
-    // Format the response
+    // Format the response to match the frontend expectations
     const response = {
-      students: classDetails.students.map(student => ({
-        id: student._id,
-        name: student.name
-      })),
-      subjects: sessionDetails.ssubjects.map(subject => ({
-        name: subject.name,
+      studentInfo: {
+        course: studentMarks.course,
+        semester: studentMarks.semester,
+        session: studentMarks.session,
+        student: studentMarks.student
+      },
+      subjects: studentMarks.subjects.map(subject => ({
+        subjectName: subject.subjectName,
         internal_minMarks: subject.internal_minMarks,
         internal_maxMarks: subject.internal_maxMarks,
+        internal_obtainedMarks: subject.internal_obtainedMarks,
         external_minMarks: subject.external_minMarks,
-        external_maxMarks: subject.external_maxMarks
+        external_maxMarks: subject.external_maxMarks,
+        external_obtainedMarks: subject.external_obtainedMarks,
+        total: subject.total
       }))
     }
 
-    console.log('Sending response:', response)
     return NextResponse.json(response)
+
   } catch (error) {
     console.error('Error in GET /api/marks:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch class details: ' + error.message },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
@@ -74,12 +66,14 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    // Step 1: Connect to the database
     await connectDB()
+
+    // Step 2: Parse JSON data from the request
     const data = await request.json()
+    console.log('Received POST request with data:', JSON.stringify(data, null, 2))
 
-    console.log('Received POST request with data:', data)
-
-    // Validate required fields
+    // Step 3: Validate required fields
     if (!data.course || !data.semester || !data.session || !data.student || !data.subjects) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -87,32 +81,56 @@ export async function POST(request) {
       )
     }
 
-    // Calculate total for each subject
-    const subjectsWithTotal = data.subjects.map(subject => ({
-      ...subject,
-      total: subject.internal_obtainedMarks + subject.external_obtainedMarks
-    }))
+    // Step 4: Calculate total for each subject and validate inputs
+    const subjectsWithTotal = data.subjects.map(subject => {
+      // Check for required marks fields
+      if (
+        subject.internal_obtainedMarks === undefined ||
+        subject.external_obtainedMarks === undefined
+      ) {
+        throw new Error(`Missing marks for subject: ${subject.subjectName}`)
+      }
+
+      // Convert string values to numbers and calculate total
+      const internalMarks = Number(subject.internal_obtainedMarks)
+      const externalMarks = Number(subject.external_obtainedMarks)
+
+      if (isNaN(internalMarks) || isNaN(externalMarks)) {
+        throw new Error(`Invalid marks for subject: ${subject.subjectName}`)
+      }
+
+      return {
+        ...subject,
+        internal_obtainedMarks: internalMarks,
+        external_obtainedMarks: externalMarks,
+        total: internalMarks + externalMarks
+      }
+    })
 
     console.log('Calculated totals for subjects:', subjectsWithTotal)
 
-    // Create or update student marks
+    // Step 5: Upsert student marks
     const result = await StudentMarks.findOneAndUpdate(
       {
-        course: data.course,
+        course: new mongoose.Types.ObjectId(data.course),
         semester: data.semester,
         session: data.session,
         student: data.student
       },
       {
+        course: new mongoose.Types.ObjectId(data.course),
+        semester: data.semester,
+        session: data.session,
+        student: data.student,
         subjects: subjectsWithTotal
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     )
 
     console.log('Updated student marks:', result)
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Error in POST /api/marks:', error)
+    console.error('Error in POST /api/marks:', error.message)
     return NextResponse.json(
       { error: 'Failed to save marks: ' + error.message },
       { status: 500 }

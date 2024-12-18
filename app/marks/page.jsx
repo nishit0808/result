@@ -53,6 +53,8 @@ export default function MarksEntryPage() {
     fetchCourses()
   }, [])
 
+  
+
   // Update semesters when course changes
   useEffect(() => {
     if (!selectedCourse) {
@@ -96,7 +98,6 @@ export default function MarksEntryPage() {
     const fetchClassDetails = async () => {
       if (!selectedCourse || !selectedSemester || !selectedSession) {
         setStudents([])
-        setSubjects([])
         return
       }
 
@@ -119,18 +120,6 @@ export default function MarksEntryPage() {
 
         if (response.data[0].students ) {
           setStudents(response.data[0].students)
-         // setSubjects(response.data[0].subjects)
-          
-          // Initialize marks array with empty values
-          // setMarks(response.data[0].subjects.map(subject => ({
-          //   subjectName: subject.name,
-          //   internal_minMarks: subject.internal_minMarks,
-          //   internal_maxMarks: subject.internal_maxMarks,
-          //   internal_obtainedMarks: '',
-          //   external_minMarks: subject.external_minMarks,
-          //   external_maxMarks: subject.external_maxMarks,
-          //   external_obtainedMarks: ''
-          // })))
         } else {
           throw new Error('Invalid response format')
         }
@@ -138,21 +127,37 @@ export default function MarksEntryPage() {
         console.error('Error fetching class details:', error.response?.data || error.message)
         setErrorMessage(error.response?.data?.error || 'Failed to load class details')
         setStudents([])
-        setSubjects([])
       }
     }
     fetchClassDetails()
   }, [selectedCourse, selectedSemester, selectedSession])
 
+  // Handle subjects fetching
+  useEffect(() => {
+    console.log(`/api/sessions?course=${selectedCourseName}&semester=${selectedSemester}&session=${selectedSession}`)
+    axios.get(`/api/sessions?course=${selectedCourseName}&semester=${selectedSemester}&session=${selectedSession}`)
+      .then(response => {
+        setSubjects(response.data)
+      })
+      .catch(error => {
+        console.error('Error fetching subjects:', error)
+        setErrorMessage('Failed to load subjects')
+      })
+  }, [selectedSession])
+
+  useEffect(() => {
+    console.log('Subjects:', subjects)
+  }, [subjects])
+
   // Handle marks input change
   const handleMarksChange = (index, field, value) => {
-    const newMarks = [...marks]
+    const newMarks = [...marks];
     newMarks[index] = {
       ...newMarks[index],
       [field]: value
-    }
-    setMarks(newMarks)
-  }
+    };
+    setMarks(newMarks);
+  };
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -164,39 +169,39 @@ export default function MarksEntryPage() {
       return
     }
 
-    // Validate marks
+    // Validate only maximum marks
     for (const mark of marks) {
       if (
         Number(mark.internal_obtainedMarks) > mark.internal_maxMarks ||
-        Number(mark.internal_obtainedMarks) < mark.internal_minMarks ||
-        Number(mark.external_obtainedMarks) > mark.external_maxMarks ||
-        Number(mark.external_obtainedMarks) < mark.external_minMarks
+        Number(mark.external_obtainedMarks) > mark.external_maxMarks
       ) {
-        setErrorMessage('Marks must be within min and max limits')
+        setErrorMessage('Marks cannot exceed maximum limits')
         return
       }
     }
 
     try {
+      const marksData = marks.map(mark => ({
+        subjectName: mark.subjectName,
+        internal_minMarks: Number(mark.internal_minMarks),
+        internal_maxMarks: Number(mark.internal_maxMarks),
+        internal_obtainedMarks: Number(mark.internal_obtainedMarks),
+        external_minMarks: Number(mark.external_minMarks),
+        external_maxMarks: Number(mark.external_maxMarks),
+        external_obtainedMarks: Number(mark.external_obtainedMarks)
+      }));
+
       await axios.post('/api/marks', {
         course: selectedCourse,
         semester: selectedSemester,
         session: selectedSession,
         student: selectedStudent,
-        subjects: marks
-      })
+        subjects: marksData
+      });
 
       setSuccessMessage('Marks saved successfully')
       setSelectedStudent('')
-      setMarks(subjects.map(subject => ({
-        subjectName: subject.name,
-        internal_minMarks: subject.internal_minMarks,
-        internal_maxMarks: subject.internal_maxMarks,
-        internal_obtainedMarks: '',
-        external_minMarks: subject.external_minMarks,
-        external_maxMarks: subject.external_maxMarks,
-        external_obtainedMarks: ''
-      })))
+      setMarks([])
     } catch (error) {
       console.error('Error saving marks:', error)
       setErrorMessage('Failed to save marks')
@@ -314,7 +319,7 @@ export default function MarksEntryPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {students.map((student) => (
-                          <SelectItem key={student.id} value={student.id}>
+                          <SelectItem key={student.uid} value={student.uid}>
                             {student.name}
                           </SelectItem>
                         ))}
@@ -327,51 +332,94 @@ export default function MarksEntryPage() {
               {/* Marks Entry Section */}
               {selectedStudent && subjects.length > 0 && (
                 <div className="space-y-2 p-4 border border-gray-200 rounded-md">
-                  <Table>
+                  <Table className="w-full border-collapse border border-gray-300">
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Subject</TableHead>
-                        <TableHead>Internal Min</TableHead>
-                        <TableHead>Internal Max</TableHead>
-                        <TableHead>Internal Marks</TableHead>
-                        <TableHead>External Min</TableHead>
-                        <TableHead>External Max</TableHead>
-                        <TableHead>External Marks</TableHead>
+                      {/* First Row */}
+                      <TableRow className="border border-gray-300">
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" rowSpan={2}>
+                          Subjects
+                        </TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
+                          Internal
+                        </TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
+                          External
+                        </TableHead>
+                      </TableRow>
+                      {/* Second Row */}
+                      <TableRow className="border border-gray-300">
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Min</TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Max</TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Marks</TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Min</TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Max</TableHead>
+                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Marks</TableHead>
                       </TableRow>
                     </TableHeader>
+
+                    {/* Table Body */}
                     <TableBody>
-                      {marks.map((mark, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{mark.subjectName}</TableCell>
-                          <TableCell>{mark.internal_minMarks}</TableCell>
-                          <TableCell>{mark.internal_maxMarks}</TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={mark.internal_obtainedMarks}
-                              onChange={(e) => handleMarksChange(index, 'internal_obtainedMarks', e.target.value)}
-                              min={mark.internal_minMarks}
-                              max={mark.internal_maxMarks}
-                            />
-                          </TableCell>
-                          <TableCell>{mark.external_minMarks}</TableCell>
-                          <TableCell>{mark.external_maxMarks}</TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={mark.external_obtainedMarks}
-                              onChange={(e) => handleMarksChange(index, 'external_obtainedMarks', e.target.value)}
-                              min={mark.external_minMarks}
-                              max={mark.external_maxMarks}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {subjects[0].ssubjects.map((subject, index) => {
+                        // Initialize marks array with subject details if not already done
+                        if (marks.length === 0 || !marks[index]) {
+                          const newMarks = [...marks];
+                          newMarks[index] = {
+                            subjectName: subject.name,
+                            internal_minMarks: subject.internal_minMarks,
+                            internal_maxMarks: subject.internal_maxMarks,
+                            external_minMarks: subject.external_minMarks,
+                            external_maxMarks: subject.external_maxMarks,
+                            internal_obtainedMarks: '',
+                            external_obtainedMarks: ''
+                          };
+                          setMarks(newMarks);
+                        }
+                        
+                        return (
+                          <TableRow key={index} className="border border-gray-300">
+                            <TableCell className="border border-gray-300">{subject.name}</TableCell>
+                            <TableCell className="border border-gray-300">
+                              {subject.internal_minMarks}
+                            </TableCell>
+                            <TableCell className="border border-gray-300">
+                              {subject.internal_maxMarks}
+                            </TableCell>
+                            <TableCell className="border border-gray-300">
+                              <Input
+                                type="number"
+                                value={marks[index]?.internal_obtainedMarks || ''}
+                                onChange={(e) =>
+                                  handleMarksChange(index, "internal_obtainedMarks", e.target.value)
+                                }
+                                min={subject.internal_minMarks}
+                                max={subject.internal_maxMarks}
+                              />
+                            </TableCell>
+                            <TableCell className="border border-gray-300">
+                              {subject.external_minMarks}
+                            </TableCell>
+                            <TableCell className="border border-gray-300">
+                              {subject.external_maxMarks}
+                            </TableCell>
+                            <TableCell className="border border-gray-300">
+                              <Input
+                                type="number"
+                                value={marks[index]?.external_obtainedMarks || ''}
+                                onChange={(e) =>
+                                  handleMarksChange(index, "external_obtainedMarks", e.target.value)
+                                }
+                                min={subject.external_minMarks}
+                                max={subject.external_maxMarks}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
 
-                  <Button 
-                    onClick={handleSubmit} 
+                  <Button
+                    onClick={handleSubmit}
                     className="w-full mt-4"
                     disabled={!marks.length}
                   >

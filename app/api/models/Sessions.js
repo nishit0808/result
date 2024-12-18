@@ -12,6 +12,7 @@ const subjectSchema = new mongoose.Schema({
 // Sessions Schema
 const sessionSchema = new mongoose.Schema({
   course: { type: mongoose.Schema.Types.ObjectId, ref: 'Courses', required: true }, // Reference to Courses schema
+  semester: { type: String, required: true }, // Semester, e.g., "Sem 1"
   session: { type: String, required: true }, // Academic session, e.g., "2023-2024"
   ssubjects: [subjectSchema] // Array of subjects for the session
 });

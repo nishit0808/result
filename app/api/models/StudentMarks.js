@@ -28,8 +28,7 @@ const studentMarksSchema = new mongoose.Schema({
     required: true 
   },
   student: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ClassDetails.students',
+    type: String,  // Changed from ObjectId to String to match uid
     required: true
   },
   subjects: [subjectMarksSchema]

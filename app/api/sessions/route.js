@@ -28,6 +28,7 @@ export async function POST(req) {
     // Create the session with the provided data
     const newSession = new Sessions({
       course: data.course,
+      semester: data.semester,
       session: data.session,
       ssubjects: data.ssubjects
     });
@@ -58,12 +59,49 @@ export async function POST(req) {
 }
 
 // GET: Fetch all sessions
-export async function GET() {
+export async function GET( req ) {
+  const { searchParams } = new URL(req.url);
+
+  // Extract the 'id' query parameter
+  const session = searchParams.get('session');
+  const course = searchParams.get('course');
+  const semester = searchParams.get('semester');
+  // console.log('Received id:', session, course, semester);
+
+
   try {
-    const sessions = await Sessions.find().populate('course');
-    return new Response(JSON.stringify(sessions), { status: 200 });
+    if (!session || !course || !semester) {
+      // If no query params, return all sessions with course data populated
+      const sessions = await Sessions.find().populate('course');
+      return new Response(JSON.stringify(sessions), { status: 200 });
+    } else {
+      // Use aggregation to filter by course name, session, and semester
+      const sessions = await Sessions.aggregate([
+        {
+          $lookup: {
+            from: 'courses', // Name of the Courses collection
+            localField: 'course',
+            foreignField: '_id',
+            as: 'courseDetails',
+          },
+        },
+        { $unwind: '$courseDetails' }, // Deconstruct the courseDetails array
+        {
+          $match: {
+            'courseDetails.name': course, // Match course name
+            session: session,            // Match session
+            semester: semester,          // Match semester
+          },
+        },
+      ]);
+
+      return new Response(JSON.stringify(sessions), { status: 200 });
+    }
   } catch (error) {
     console.error("Error fetching sessions:", error);
-    return new Response(JSON.stringify({ error: "Error fetching sessions", details: error.message }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Error fetching sessions", details: error.message }),
+      { status: 500 }
+    );
   }
 }
