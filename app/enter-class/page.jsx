@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import * as XLSX from 'xlsx'
 import { FileUp } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 
 export default function EnterClassPage() {
   // State for dropdowns
@@ -209,7 +210,7 @@ export default function EnterClassPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800 p-4">
-      <div className="container mx-auto">
+      <div className="container mx-auto space-y-6">
         {/* Error and Success Messages */}
         {errorMessage && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
@@ -388,6 +389,18 @@ export default function EnterClassPage() {
                 Submit Class Details
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+          <CardContent className="p-4">
+            <Button
+              type="button"
+              onClick={() => window.location.href = '/marks'}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2"
+            >
+              Enter the Marks <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
           </CardContent>
         </Card>
       </div>

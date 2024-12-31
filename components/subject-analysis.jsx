@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import axios from 'axios'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -8,67 +9,155 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recha
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 
-const sessionOptions = [
-  { value: "2023-24", label: "2023-24" },
-  { value: "2022-23", label: "2022-23" },
-  { value: "2021-22", label: "2021-22" },
-]
-
-const courseOptions = [
-  { value: "btech-cse", label: "B.Tech CSE" },
-  { value: "btech-it", label: "B.Tech IT" },
-  { value: "btech-ece", label: "B.Tech ECE" },
-]
-
-const semesterOptions = [
-  { value: "1", label: "1st Semester" },
-  { value: "2", label: "2nd Semester" },
-  { value: "3", label: "3rd Semester" },
-  { value: "4", label: "4th Semester" },
-]
-
-const subjectOptions = [
-  { value: "math", label: "Mathematics" },
-  { value: "physics", label: "Physics" },
-  { value: "chemistry", label: "Chemistry" },
-  { value: "programming", label: "Programming" },
-]
-
-const studentData = [
-  { id: 1, name: "John Doe", internal: 18, external: 67, total: 85 },
-  { id: 2, name: "Jane Smith", internal: 17, external: 65, total: 82 },
-  { id: 3, name: "Alex Johnson", internal: 19, external: 69, total: 88 },
-  { id: 4, name: "Sarah Williams", internal: 16, external: 62, total: 78 },
-  { id: 5, name: "Mike Brown", internal: 15, external: 58, total: 73 },
-  { id: 6, name: "Emily Davis", internal: 18, external: 66, total: 84 },
-  { id: 7, name: "Chris Wilson", internal: 14, external: 55, total: 69 },
-  { id: 8, name: "Anna Lee", internal: 19, external: 70, total: 89 },
-]
-
 export function SubjectAnalysisComponent() {
-  const [selectedSession, setSelectedSession] = React.useState("")
+  const [courses, setCourses] = React.useState([])
+  const [semesters, setSemesters] = React.useState([])
+  const [sessions, setSessions] = React.useState([])
+  const [subjects, setSubjects] = React.useState([])
+  const [allSessions, setAllSessions] = React.useState([])
+  const [subjectData, setSubjectData] = React.useState(null)
   const [selectedCourse, setSelectedCourse] = React.useState("")
   const [selectedSemester, setSelectedSemester] = React.useState("")
+  const [selectedSession, setSelectedSession] = React.useState("")
   const [selectedSubject, setSelectedSubject] = React.useState("")
 
-  const classAverage = React.useMemo(() => {
-    return studentData.reduce((sum, student) => sum + student.total, 0) / studentData.length;
+  // Fetch courses on component mount
+  React.useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const response = await axios.get('/api/course')
+        setCourses(response.data || [])
+      } catch (error) {
+        console.error('Error fetching courses:', error)
+      }
+    }
+    fetchCourses()
   }, [])
 
-  const topPerformers = React.useMemo(() => {
-    return [...studentData].sort((a, b) => b.total - a.total).slice(0, 3);
+  // Fetch all sessions on component mount
+  React.useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        const response = await axios.get('/api/sessions')
+        setAllSessions(response.data || [])
+      } catch (error) {
+        console.error('Error fetching sessions:', error)
+      }
+    }
+    fetchSessions()
   }, [])
+
+  // Update semesters when course changes
+  React.useEffect(() => {
+    if (selectedCourse) {
+      const selectedCourseData = courses.find(course => course._id === selectedCourse)
+      setSemesters(selectedCourseData?.semester || [])
+      setSelectedSemester("") // Reset semester selection
+      setSelectedSession("") // Reset session selection
+      setSelectedSubject("") // Reset subject selection
+    }
+  }, [selectedCourse, courses])
+
+  // Update available sessions when course or semester changes
+  React.useEffect(() => {
+    if (selectedCourse && selectedSemester) {
+      const filteredSessions = allSessions.filter(session => 
+        session.course._id === selectedCourse && 
+        session.semester === selectedSemester
+      )
+      const uniqueSessions = [...new Set(filteredSessions.map(session => session.session))]
+      setSessions(uniqueSessions)
+      setSelectedSession("") // Reset session selection
+      setSelectedSubject("") // Reset subject selection
+    } else {
+      setSessions([])
+    }
+  }, [selectedCourse, selectedSemester, allSessions])
+
+  // Update available subjects when course, semester, and session change
+  React.useEffect(() => {
+    if (selectedCourse && selectedSemester && selectedSession) {
+      const sessionData = allSessions.find(session => 
+        session.course._id === selectedCourse && 
+        session.semester === selectedSemester &&
+        session.session === selectedSession
+      )
+      
+      if (sessionData) {
+        const subjectsList = sessionData.ssubjects.map(subject => ({
+          value: subject._id,
+          label: subject.name
+        }))
+        setSubjects(subjectsList)
+      } else {
+        setSubjects([])
+      }
+      setSelectedSubject("") // Reset subject selection
+    } else {
+      setSubjects([])
+    }
+  }, [selectedCourse, selectedSemester, selectedSession, allSessions])
+
+  // Fetch subject data when a subject is selected
+  React.useEffect(() => {
+    const fetchSubjectData = async () => {
+      if (selectedCourse && selectedSemester && selectedSession && selectedSubject) {
+        try {
+          const sessionData = allSessions.find(session => 
+            session.course._id === selectedCourse && 
+            session.semester === selectedSemester &&
+            session.session === selectedSession
+          )
+          
+          const subject = sessionData?.ssubjects.find(s => s._id === selectedSubject)
+          
+          if (subject) {
+            const response = await axios.get('/api/marks/subject', {
+              params: {
+                course: selectedCourse,
+                semester: selectedSemester,
+                session: selectedSession,
+                subjectName: subject.name
+              }
+            })
+            console.log(`/api/marks/subject?course=${selectedCourse}&semester=${selectedSemester}&session=${selectedSession}&subjectName=${subject.name}`)
+            setSubjectData(response.data)
+          }
+        } catch (error) {
+          console.error('Error fetching subject data:', error)
+        }
+      } else {
+        setSubjectData(null)
+      }
+    }
+    fetchSubjectData()
+  }, [selectedCourse, selectedSemester, selectedSession, selectedSubject, allSessions])
+
+  const classAverage = React.useMemo(() => {
+    return subjectData?.statistics?.classAverage || 0
+  }, [subjectData])
 
   const passFailCounts = React.useMemo(() => {
-    const passCount = studentData.filter(student => student.total >= 40).length
-    return { pass: passCount, fail: studentData.length - passCount }
-  }, [])
+    if (!subjectData) return { pass: 0, fail: 0 }
+    return {
+      pass: subjectData.statistics.passedStudents,
+      fail: subjectData.statistics.failedStudents
+    }
+  }, [subjectData])
 
   const passPercentage = React.useMemo(() => {
-    return (passFailCounts.pass / studentData.length) * 100
-  }, [passFailCounts])
+    return subjectData?.statistics?.passPercentage || 0
+  }, [subjectData])
+
+  const topPerformers = React.useMemo(() => {
+    if (!subjectData?.students) return []
+    return [...subjectData.students]
+      .sort((a, b) => b.marks.total - a.marks.total)
+      .slice(0, 3)
+  }, [subjectData])
 
   const marksDistribution = React.useMemo(() => {
+    if (!subjectData?.students) return []
     const distribution = [
       { range: '0-20', count: 0 },
       { range: '21-40', count: 0 },
@@ -76,17 +165,19 @@ export function SubjectAnalysisComponent() {
       { range: '61-80', count: 0 },
       { range: '81-100', count: 0 },
     ]
-    studentData.forEach(student => {
-      if (student.total <= 20) distribution[0].count++
-      else if (student.total <= 40) distribution[1].count++
-      else if (student.total <= 60) distribution[2].count++
-      else if (student.total <= 80) distribution[3].count++
+    subjectData.students.forEach(student => {
+      const total = student.marks.total
+      if (total <= 20) distribution[0].count++
+      else if (total <= 40) distribution[1].count++
+      else if (total <= 60) distribution[2].count++
+      else if (total <= 80) distribution[3].count++
       else distribution[4].count++
     })
     return distribution
-  }, [])
+  }, [subjectData])
 
   const gradeDistribution = React.useMemo(() => {
+    if (!subjectData?.students) return []
     const distribution = [
       { grade: 'A', count: 0 },
       { grade: 'B', count: 0 },
@@ -94,15 +185,16 @@ export function SubjectAnalysisComponent() {
       { grade: 'D', count: 0 },
       { grade: 'F', count: 0 },
     ]
-    studentData.forEach(student => {
-      if (student.total >= 90) distribution[0].count++
-      else if (student.total >= 80) distribution[1].count++
-      else if (student.total >= 70) distribution[2].count++
-      else if (student.total >= 60) distribution[3].count++
+    subjectData.students.forEach(student => {
+      const total = student.marks.total
+      if (total >= 90) distribution[0].count++
+      else if (total >= 80) distribution[1].count++
+      else if (total >= 70) distribution[2].count++
+      else if (total >= 60) distribution[3].count++
       else distribution[4].count++
     })
     return distribution
-  }, [])
+  }, [subjectData])
 
   return (
     (<div
@@ -115,62 +207,53 @@ export function SubjectAnalysisComponent() {
               Subject Analysis
             </h1>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select course" />
+                </SelectTrigger>
+                <SelectContent>
+                  {courses.map((course) => (
+                    <SelectItem key={course._id} value={course._id}>
+                      {course.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={selectedSemester} onValueChange={setSelectedSemester}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select semester" />
+                </SelectTrigger>
+                <SelectContent>
+                  {semesters.map((semester) => (
+                    <SelectItem key={semester} value={semester}>
+                      {semester}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={selectedSession} onValueChange={setSelectedSession}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select session" />
                 </SelectTrigger>
                 <SelectContent>
-                  {sessionOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {sessions.map((session) => (
+                    <SelectItem key={session} value={session}>
+                      {session}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              <Select
-                value={selectedCourse}
-                onValueChange={setSelectedCourse}
-                disabled={!selectedSession}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select course" />
-                </SelectTrigger>
-                <SelectContent>
-                  {courseOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={selectedSemester}
-                onValueChange={setSelectedSemester}
-                disabled={!selectedCourse}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select semester" />
-                </SelectTrigger>
-                <SelectContent>
-                  {semesterOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={selectedSubject}
-                onValueChange={setSelectedSubject}
-                disabled={!selectedSemester}>
+              <Select value={selectedSubject} onValueChange={setSelectedSubject}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  {subjectOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {subjects.map((subject) => (
+                    <SelectItem key={subject.value} value={subject.value}>
+                      {subject.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -224,10 +307,10 @@ export function SubjectAnalysisComponent() {
                 <CardContent>
                   <ul className="space-y-2">
                     {topPerformers.map((student, index) => (
-                      <li key={student.id} className="flex justify-between items-center">
-                        <span>{student.name}</span>
+                      <li key={index} className="flex justify-between items-center">
+                        <span>{student.student}</span>
                         <Badge variant={index === 0 ? "default" : index === 1 ? "secondary" : "outline"}>
-                          {student.total}
+                          {student.marks.total}
                         </Badge>
                       </li>
                     ))}
@@ -252,13 +335,13 @@ export function SubjectAnalysisComponent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {studentData.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell>{student.id}</TableCell>
-                        <TableCell>{student.name}</TableCell>
-                        <TableCell className="text-center">{student.internal}</TableCell>
-                        <TableCell className="text-center">{student.external}</TableCell>
-                        <TableCell className="text-center">{student.total}</TableCell>
+                    {subjectData?.students.map((student, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{student.student}</TableCell>
+                        <TableCell className="text-center">{student.marks.internal_obtainedMarks}</TableCell>
+                        <TableCell className="text-center">{student.marks.external_obtainedMarks}</TableCell>
+                        <TableCell className="text-center">{student.marks.total}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

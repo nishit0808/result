@@ -5,13 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PlusCircle, Trash2 } from "lucide-react";
+import { PlusCircle, Trash2, ArrowRight } from "lucide-react";
 import axios from "axios";
 
 export default function ResultAnalysis() {
   const [courses, setCourses] = useState([{ id: 1, name: "", semester: "" }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState(null);
 
   const handleAddCourse = () => {
     setCourses([...courses, { id: Date.now(), name: "", semester: "" }]);
@@ -32,7 +31,6 @@ export default function ResultAnalysis() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setAnalysisResult(null);
 
     try {
       // Send each course data to the backend
@@ -42,8 +40,7 @@ export default function ResultAnalysis() {
           semester: course.semester.split(","),
         });
       }
-      alert("Courses submitted successfully!");
-      setAnalysisResult("Courses have been submitted.");
+      window.location.href = '/sessions';
     } catch (error) {
       console.error("Error:", error.response?.data || error.message);
       alert("Failed to submit courses. Please try again.");
@@ -54,11 +51,11 @@ export default function ResultAnalysis() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800 p-4">
-      <div className="container mx-auto">
+      <div className="container mx-auto space-y-6">
         <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-2xl font-bold text-center">
-              Result Analysis Input
+              Enter Course and Semester
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -124,28 +121,21 @@ export default function ResultAnalysis() {
               </Button>
 
               <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit for Analysis"}
+                {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <Card className="mt-6 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold">
-              Analysis Results
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {analysisResult ? (
-              <pre className="whitespace-pre-wrap break-words">
-                {analysisResult}
-              </pre>
-            ) : (
-              <p className="text-muted-foreground">
-                Analysis results will be displayed here after submission.
-              </p>
-            )}
+        <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+          <CardContent className="p-4">
+            <Button
+              type="button"
+              onClick={() => window.location.href = '/sessions'}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2"
+            >
+              Enter the Session <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
           </CardContent>
         </Card>
       </div>
