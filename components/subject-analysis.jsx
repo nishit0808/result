@@ -308,7 +308,7 @@ export function SubjectAnalysisComponent() {
                   <ul className="space-y-2">
                     {topPerformers.map((student, index) => (
                       <li key={index} className="flex justify-between items-center">
-                        <span>{student.student}</span>
+                        <span>Student {index + 1}</span>
                         <Badge variant={index === 0 ? "default" : index === 1 ? "secondary" : "outline"}>
                           {student.marks.total}
                         </Badge>
@@ -327,8 +327,9 @@ export function SubjectAnalysisComponent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[100px]">S.No</TableHead>
+                      <TableHead className="w-[50px]">Rank</TableHead>
                       <TableHead>Name</TableHead>
+                      <TableHead>Enrollment No.</TableHead>
                       <TableHead className="text-center">Internal</TableHead>
                       <TableHead className="text-center">External</TableHead>
                       <TableHead className="text-center">Total</TableHead>
@@ -339,9 +340,16 @@ export function SubjectAnalysisComponent() {
                       <TableRow key={index}>
                         <TableCell>{index + 1}</TableCell>
                         <TableCell>{student.student}</TableCell>
-                        <TableCell className="text-center">{student.marks.internal_obtainedMarks}</TableCell>
-                        <TableCell className="text-center">{student.marks.external_obtainedMarks}</TableCell>
-                        <TableCell className="text-center">{student.marks.total}</TableCell>
+                        <TableCell>{student.enrollmentNo || 'N/A'}</TableCell>
+                        <TableCell className="text-center">
+                          {student.marks.internal_obtainedMarks} / {student.marks.internal_maxMarks}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {student.marks.external_obtainedMarks} / {student.marks.external_maxMarks}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {student.marks.total} / {student.marks.internal_maxMarks + student.marks.external_maxMarks}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

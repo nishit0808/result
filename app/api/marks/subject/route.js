@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import connectDB from "@/lib/mongoose"
 import StudentMarks from "../../models/StudentMarks"
+import ClassDetails from "../../models/ClassDetails"
 
 export async function GET(request) {
   try {
@@ -20,12 +21,26 @@ export async function GET(request) {
       )
     }
 
+    // First, get the class details to get student names
+    const classDetails = await ClassDetails.findOne({
+      course,
+      semester,
+      session
+    })
+
+    if (!classDetails) {
+      return NextResponse.json(
+        { error: 'Class details not found' },
+        { status: 404 }
+      )
+    }
+
     // Find all student marks for the given criteria
     const studentMarks = await StudentMarks.find({
       course,
       semester,
       session
-    }).populate('course').populate('student', 'name rollNo') // Populate student field to get the name and roll number
+    }).populate('course')
 
     if (!studentMarks || studentMarks.length === 0) {
       return NextResponse.json(
@@ -35,11 +50,14 @@ export async function GET(request) {
     }
 
     // Extract subject-specific marks for each student
-    const subjectMarks = studentMarks.map(student => {
-      const subject = student.subjects.find(sub => sub.subjectName === subjectName)
+    const subjectMarks = studentMarks.map(studentMark => {
+      const subject = studentMark.subjects.find(sub => sub.subjectName === subjectName)
+      // Find student details from classDetails
+      const studentDetails = classDetails.students.find(student => student.uid === studentMark.student)
+      
       return {
-        student: student.student.name, // Use the populated student name
-        rollNo: student.student.rollNo, // Include roll number if available
+        student: studentDetails ? studentDetails.name : studentMark.student, // Use name if found, fallback to ID
+        enrollmentNo: studentDetails?.enrollmentNo,
         marks: subject ? {
           internal_obtainedMarks: subject.internal_obtainedMarks,
           external_obtainedMarks: subject.external_obtainedMarks,
@@ -51,6 +69,9 @@ export async function GET(request) {
         } : null
       }
     }).filter(mark => mark.marks !== null)
+
+    // Sort students by total marks in descending order
+    subjectMarks.sort((a, b) => b.marks.total - a.marks.total)
 
     // Calculate class statistics
     const totalStudents = subjectMarks.length
