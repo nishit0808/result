@@ -17,14 +17,14 @@ const teacherData = {
   "computer-science": [
     {
       name: "Reekha Awathi",
-      classes: [
+      subjects: [
         { name: "BCA 1ST YEAR", subject: "Operating System", passed: 45, failed: 7 },
         { name: "BCA 2ND YEAR", subject: "C++", passed: 50, failed: 4 },
       ],
     },
     {
       name: "John Doe",
-      classes: [
+      subjects: [
         { name: "BCA 2ND YEAR", subject: "Data Structures", passed: 48, failed: 7 },
         { name: "BCA 3RD YEAR", subject: "Web Development", passed: 52, failed: 1 },
       ],
@@ -52,9 +52,9 @@ export function TeacherResultAnalysisComponent() {
     : null
 
   const studentDistribution = selectedTeacherData
-    ? selectedTeacherData.classes.reduce((acc, cls) => {
-      acc[0].value += cls.passed || 0;
-      acc[1].value += cls.failed || 0;
+    ? selectedTeacherData.subjects.reduce((acc, subj) => {
+      acc[0].value += subj.passed || 0;
+      acc[1].value += subj.failed || 0;
       return acc;
     }, [
       { name: 'Pass', value: 0, color: '#4299E1' },
@@ -113,9 +113,9 @@ export function TeacherResultAnalysisComponent() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-3xl font-bold">
-                      {selectedTeacherData.classes.reduce((sum, cls) => sum + cls.passed + cls.failed, 0)}
+                      {selectedTeacherData.subjects.reduce((sum, subj) => sum + subj.passed + subj.failed, 0)}
                     </div>
-                    <p className="text-sm text-blue-200">Across all classes</p>
+                    <p className="text-sm text-blue-200">Across all subjects</p>
                   </CardContent>
                 </Card>
                 <Card className="bg-gradient-to-br from-blue-500 to-blue-700 text-white">
@@ -125,8 +125,8 @@ export function TeacherResultAnalysisComponent() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-3xl font-bold">
-                      {Math.round((selectedTeacherData.classes.reduce((sum, cls) => sum + cls.passed, 0) /
-                        selectedTeacherData.classes.reduce((sum, cls) => sum + cls.passed + cls.failed, 0)) *
+                      {Math.round((selectedTeacherData.subjects.reduce((sum, subj) => sum + subj.passed, 0) /
+                        selectedTeacherData.subjects.reduce((sum, subj) => sum + subj.passed + subj.failed, 0)) *
                         100)}%
                     </div>
                     <p className="text-sm text-blue-200">Overall pass percentage</p>
@@ -134,12 +134,12 @@ export function TeacherResultAnalysisComponent() {
                 </Card>
                 <Card className="bg-gradient-to-br from-blue-600 to-blue-800 text-white">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-lg font-medium">Classes Taught</CardTitle>
+                    <CardTitle className="text-lg font-medium">Subjects Taught</CardTitle>
                     <BookOpen className="h-6 w-6 text-blue-200" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-3xl font-bold">{selectedTeacherData.classes.length}</div>
-                    <p className="text-sm text-blue-200">Number of classes</p>
+                    <div className="text-3xl font-bold">{selectedTeacherData.subjects.length}</div>
+                    <p className="text-sm text-blue-200">Number of subjects</p>
                   </CardContent>
                 </Card>
               </div>
@@ -148,69 +148,52 @@ export function TeacherResultAnalysisComponent() {
                 <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="text-lg font-medium flex items-center">
-                      <PieChartIcon className="h-5 w-5 mr-2 text-blue-500" />
-                      Student Distribution
+                      <PieChartIcon className="mr-2 h-5 w-5" />
+                      Pass/Fail Distribution
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="h-[300px]">
-                      {studentDistribution.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={studentDistribution}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={60}
-                              outerRadius={80}
-                              paddingAngle={5}
-                              dataKey="value">
-                              {studentDistribution.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <p className="text-muted-foreground">No data available</p>
-                        </div>
-                      )}
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={studentDistribution}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {studentDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Legend />
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
                   </CardContent>
                 </Card>
+
                 <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="text-lg font-medium flex items-center">
-                      <TrendingUp className="h-5 w-5 mr-2 text-blue-500" />
+                      <TrendingUp className="mr-2 h-5 w-5" />
                       Subject Performance
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="h-[300px]">
-                      {subjectPerformanceData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={subjectPerformanceData}
-                            layout="vertical"
-                            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                            <XAxis type="number" />
-                            <YAxis dataKey="subject" type="category" />
-                            <Tooltip />
-                            <Bar dataKey="average" radius={[0, 4, 4, 0]}>
-                              {subjectPerformanceData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <p className="text-muted-foreground">No data available</p>
-                        </div>
-                      )}
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={subjectPerformanceData}>
+                          <XAxis dataKey="subject" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="average" fill="#3182CE" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   </CardContent>
                 </Card>
@@ -218,8 +201,7 @@ export function TeacherResultAnalysisComponent() {
 
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle className="text-lg font-medium">Class-wise Results</CardTitle>
-                  <CardDescription>Overview of performance in each class</CardDescription>
+                  <CardTitle className="text-lg font-medium">Detailed Subject Performance</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -229,18 +211,20 @@ export function TeacherResultAnalysisComponent() {
                         <TableHead>Subject</TableHead>
                         <TableHead>Passed</TableHead>
                         <TableHead>Failed</TableHead>
+                        <TableHead>Pass Rate</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {selectedTeacherData.classes.map((cls, index) => (
+                      {selectedTeacherData.subjects.map((subj, index) => (
                         <TableRow key={index}>
-                          <TableCell>{cls.name}</TableCell>
-                          <TableCell>{cls.subject}</TableCell>
+                          <TableCell>{subj.name}</TableCell>
+                          <TableCell>{subj.subject}</TableCell>
+                          <TableCell>{subj.passed}</TableCell>
+                          <TableCell>{subj.failed}</TableCell>
                           <TableCell>
-                            <Badge variant="success">{cls.passed}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="destructive">{cls.failed}</Badge>
+                            <Badge variant={subj.passed / (subj.passed + subj.failed) > 0.8 ? "success" : "warning"}>
+                              {Math.round((subj.passed / (subj.passed + subj.failed)) * 100)}%
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -249,29 +233,9 @@ export function TeacherResultAnalysisComponent() {
                 </CardContent>
               </Card>
             </>
-          ) : (
-            <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-              <CardContent className="flex flex-col items-center justify-center py-20">
-                <Users className="h-16 w-16 text-blue-500 mb-6" />
-                <h2 className="text-2xl font-semibold mb-2">Select a Teacher</h2>
-                <p className="text-muted-foreground text-center max-w-sm">
-                  Choose a teacher from the dropdown above to view their result analysis.
-                </p>
-              </CardContent>
-            </Card>
-          )
-        ) : (
-          <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-            <CardContent className="flex flex-col items-center justify-center py-20">
-              <BookOpen className="h-16 w-16 text-blue-500 mb-6" />
-              <h2 className="text-2xl font-semibold mb-2">Select Department and Teacher</h2>
-              <p className="text-muted-foreground text-center max-w-sm">
-                Choose a department and teacher from the dropdowns above to view the result analysis.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+          ) : null
+        ) : null}
       </div>
     </div>)
-  );
+  )
 }
