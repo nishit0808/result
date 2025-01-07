@@ -5,9 +5,13 @@ import axios from 'axios'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, LabelList } from 'recharts'
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { ArrowUpDown, ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
 
 export function SubjectAnalysisComponent() {
   const [courses, setCourses] = React.useState([])
@@ -20,6 +24,10 @@ export function SubjectAnalysisComponent() {
   const [selectedSemester, setSelectedSemester] = React.useState("")
   const [selectedSession, setSelectedSession] = React.useState("")
   const [selectedSubject, setSelectedSubject] = React.useState("")
+  const [sortConfig, setSortConfig] = React.useState({
+    key: null,
+    direction: 'asc'
+  })
 
   // Fetch courses on component mount
   React.useEffect(() => {
@@ -133,6 +141,64 @@ export function SubjectAnalysisComponent() {
     fetchSubjectData()
   }, [selectedCourse, selectedSemester, selectedSession, selectedSubject, allSessions])
 
+  // Sorting function
+  const sortData = React.useCallback((data, key, direction) => {
+    if (!data) return data;
+
+    const sortedData = [...data].sort((a, b) => {
+      let aValue, bValue;
+      
+      switch(key) {
+        case 'internal':
+          aValue = a.marks.internal_obtainedMarks;
+          bValue = b.marks.internal_obtainedMarks;
+          break;
+        case 'external':
+          aValue = a.marks.external_obtainedMarks;
+          bValue = b.marks.external_obtainedMarks;
+          break;
+        case 'total':
+          aValue = a.marks.total;
+          bValue = b.marks.total;
+          break;
+        case 'name':
+          aValue = a.student.toLowerCase();
+          bValue = b.student.toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return sortedData;
+  }, []);
+
+  const handleSort = (key) => {
+    setSortConfig((prevConfig) => {
+      const newDirection = 
+        prevConfig.key === key && prevConfig.direction === 'asc' 
+          ? 'desc' 
+          : 'asc';
+      return {
+        key,
+        direction: newDirection
+      };
+    });
+  };
+
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return <ArrowUpDown className="ml-2 h-4 w-4" />;
+    }
+    return sortConfig.direction === 'asc' 
+      ? <ChevronUp className="ml-2 h-4 w-4" />
+      : <ChevronDown className="ml-2 h-4 w-4" />;
+  };
+
   const classAverage = React.useMemo(() => {
     return subjectData?.statistics?.classAverage || 0
   }, [subjectData])
@@ -195,6 +261,70 @@ export function SubjectAnalysisComponent() {
     })
     return distribution
   }, [subjectData])
+
+  const handleExportToExcel = () => {
+    if (!subjectData?.students) return
+
+    // Prepare data for export
+    const exportData = subjectData.students.map(student => ({
+      'Student Name': student.student,
+      'CIA Score': `${student.marks.internal_obtainedMarks}/${student.marks.internal_maxMarks}`,
+      'ESE Score': `${student.marks.external_obtainedMarks}/${student.marks.external_maxMarks}`,
+      'Total Score': `${student.marks.total}/${student.marks.internal_maxMarks + student.marks.external_maxMarks}`
+    }))
+
+    // Create workbook and worksheet
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Subject Analysis')
+
+    // Generate file name
+    const selectedCourseData = courses.find(course => course._id === selectedCourse)
+    const selectedSubjectData = subjects.find(subject => subject.value === selectedSubject)
+    const fileName = `${selectedCourseData?.name || 'Course'}_${selectedSemester || 'Sem'}_${selectedSubjectData?.label || 'Subject'}_Analysis.xlsx`
+
+    // Save file
+    XLSX.writeFile(wb, fileName)
+  }
+
+  const handleChartsDownload = async () => {
+    try {
+      const selectedCourseData = courses.find(course => course._id === selectedCourse)
+      const selectedSubjectData = subjects.find(subject => subject.value === selectedSubject)
+      const baseFileName = `${selectedCourseData?.name || 'Course'}_${selectedSemester || 'Sem'}_${selectedSubjectData?.label || 'Subject'}`
+
+      // Download Marks Distribution Chart
+      const marksChart = document.getElementById('marksDistributionChart')
+      if (marksChart) {
+        const marksCanvas = await html2canvas(marksChart)
+        const marksUrl = marksCanvas.toDataURL('image/png')
+        const marksLink = document.createElement('a')
+        marksLink.download = `${baseFileName}_MarksDistribution.png`
+        marksLink.href = marksUrl
+        document.body.appendChild(marksLink)
+        marksLink.click()
+        document.body.removeChild(marksLink)
+      }
+
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Download Grade Distribution Chart
+      const gradeChart = document.getElementById('gradeDistributionChart')
+      if (gradeChart) {
+        const gradeCanvas = await html2canvas(gradeChart)
+        const gradeUrl = gradeCanvas.toDataURL('image/png')
+        const gradeLink = document.createElement('a')
+        gradeLink.download = `${baseFileName}_GradeDistribution.png`
+        gradeLink.href = gradeUrl
+        document.body.appendChild(gradeLink)
+        gradeLink.click()
+        document.body.removeChild(gradeLink)
+      }
+    } catch (error) {
+      console.error('Error downloading charts:', error)
+    }
+  }
 
   return (
     (<div
@@ -327,20 +457,52 @@ export function SubjectAnalysisComponent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px]">Rank</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Enrollment No.</TableHead>
-                      <TableHead className="text-center">Internal</TableHead>
-                      <TableHead className="text-center">External</TableHead>
-                      <TableHead className="text-center">Total</TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => handleSort('name')}
+                          className="hover:bg-transparent"
+                        >
+                          Name
+                          {getSortIcon('name')}
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-center">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => handleSort('internal')}
+                          className="hover:bg-transparent"
+                        >
+                          Continuous Internal Assessment (CIA)
+                          {getSortIcon('internal')}
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-center">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => handleSort('external')}
+                          className="hover:bg-transparent"
+                        >
+                          End Semester Examination (ESE)
+                          {getSortIcon('external')}
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-center">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => handleSort('total')}
+                          className="hover:bg-transparent"
+                        >
+                          Total
+                          {getSortIcon('total')}
+                        </Button>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {subjectData?.students.map((student, index) => (
-                      <TableRow key={index}>
-                        <TableCell>{index + 1}</TableCell>
+                    {sortData(subjectData?.students, sortConfig.key, sortConfig.direction)?.map((student) => (
+                      <TableRow key={student.enrollmentNo}>
                         <TableCell>{student.student}</TableCell>
-                        <TableCell>{student.enrollmentNo || 'N/A'}</TableCell>
                         <TableCell className="text-center">
                           {student.marks.internal_obtainedMarks} / {student.marks.internal_maxMarks}
                         </TableCell>
@@ -354,6 +516,16 @@ export function SubjectAnalysisComponent() {
                     ))}
                   </TableBody>
                 </Table>
+                <div className="mt-4 flex justify-end">
+                  <Button 
+                    onClick={handleExportToExcel}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    disabled={!subjectData?.students}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export to Excel
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
@@ -363,13 +535,15 @@ export function SubjectAnalysisComponent() {
                   <CardTitle>Marks Distribution</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div id="marksDistributionChart" className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={marksDistribution}>
+                      <BarChart data={marksDistribution} margin={{ top: 25, right: 30, left: 20, bottom: 5 }}>
                         <XAxis dataKey="range" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#3b82f6" />
+                        <Bar dataKey="count" fill="#3b82f6" barSize={35}>
+                          <LabelList dataKey="count" position="top" offset={10} />
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -381,18 +555,30 @@ export function SubjectAnalysisComponent() {
                   <CardTitle>Grade Distribution</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div id="gradeDistributionChart" className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={gradeDistribution}>
+                      <BarChart data={gradeDistribution} margin={{ top: 25, right: 30, left: 20, bottom: 5 }}>
                         <XAxis dataKey="grade" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#10b981" />
+                        <Bar dataKey="count" fill="#10b981" barSize={35}>
+                          <LabelList dataKey="count" position="top" offset={10} />
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </CardContent>
               </Card>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button
+                onClick={handleChartsDownload}
+                className="bg-green-600 hover:bg-green-700 text-white"
+                disabled={!subjectData?.students}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Charts
+              </Button>
             </div>
           </>
         )}

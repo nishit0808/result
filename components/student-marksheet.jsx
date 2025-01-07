@@ -262,8 +262,8 @@ export function StudentMarksheetComponent() {
                           </TableRow>
                           <TableRow>
                             <TableHead></TableHead>
-                            <TableHead className="text-center" colSpan={3}>Internal</TableHead>
-                            <TableHead className="text-center" colSpan={3}>External</TableHead>
+                            <TableHead className="text-center" colSpan={3}>Continuous Internal Assessment (CIA)</TableHead>
+                            <TableHead className="text-center" colSpan={3}>End Semester Examination (ESE)</TableHead>
                             <TableHead></TableHead>
                           </TableRow>
                         </TableHeader>

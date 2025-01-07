@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import * as XLSX from 'xlsx'
 import { FileUp } from "lucide-react"
 import { ArrowRight } from "lucide-react"
+import { Toaster, toast } from 'sonner'
 
 export default function EnterClassPage() {
   // State for dropdowns
@@ -24,7 +25,7 @@ export default function EnterClassPage() {
   // Student form state
   const [students, setStudents] = useState([])
   const [newStudent, setNewStudent] = useState({
-    uid: '',
+    rollNo: '',
     enrollmentNo: '',
     name: ''
   })
@@ -99,23 +100,23 @@ export default function EnterClassPage() {
 
   // Handle adding a new student
   const handleAddStudent = () => {
-    if (!newStudent.uid || !newStudent.enrollmentNo || !newStudent.name) {
+    if (!newStudent.rollNo || !newStudent.enrollmentNo || !newStudent.name) {
       setErrorMessage('Please fill in all student details')
       return
     }
 
     const isDuplicate = students.some(
-      student => student.uid === newStudent.uid || 
+      student => student.rollNo === newStudent.rollNo || 
                  student.enrollmentNo === newStudent.enrollmentNo
     )
 
     if (isDuplicate) {
-      setErrorMessage('Student with this UID or Enrollment No. already exists')
+      setErrorMessage('Student with this Roll No. or Enrollment No. already exists')
       return
     }
 
     setStudents([...students, newStudent])
-    setNewStudent({ uid: '', enrollmentNo: '', name: '' })
+    setNewStudent({ rollNo: '', enrollmentNo: '', name: '' })
     setSuccessMessage('Student added successfully')
   }
 
@@ -139,53 +140,74 @@ export default function EnterClassPage() {
         const worksheet = workbook.Sheets[sheetName]
         const jsonData = XLSX.utils.sheet_to_json(worksheet)
 
+        console.log('Excel data:', jsonData); // Debug log
+
         // Validate and format the data
-        const validStudents = jsonData.map(row => ({
-          uid: String(row.uid || row.UID || row.Uid || ''),
-          enrollmentNo: String(row.enrollmentNo || row.enrollment_no || row.EnrollmentNo || row['Enrollment No.'] || ''),
-          name: String(row.name || row.Name || '')
-        })).filter(student => student.uid && student.enrollmentNo && student.name)
+        const validStudents = jsonData.map(row => {
+          console.log('Processing row:', row); // Debug log
+          return {
+            rollNo: String(row['Roll No.'] || row['Roll No'] || row['RollNo'] || ''),
+            enrollmentNo: String(row['Enrollment No.'] || row['Enrollment No'] || row['EnrollmentNo'] || ''),
+            name: String(row['Name'] || '')
+          };
+        }).filter(student => {
+          const isValid = student.rollNo && student.enrollmentNo && student.name;
+          if (!isValid) {
+            console.log('Invalid student:', student); // Debug log
+          }
+          return isValid;
+        });
+
+        console.log('Valid students:', validStudents); // Debug log
 
         if (validStudents.length === 0) {
-          setErrorMessage('No valid student data found in Excel file. Please ensure columns are named: uid, enrollmentNo, name')
+          toast.error('No valid student data found in Excel file. Please ensure columns are named: Roll No., Enrollment No., Name')
           return
         }
 
         // Check for duplicates with existing students
         const newStudents = validStudents.filter(newStudent => 
           !students.some(existingStudent => 
-            existingStudent.uid === newStudent.uid || 
+            existingStudent.rollNo === newStudent.rollNo || 
             existingStudent.enrollmentNo === newStudent.enrollmentNo
           )
         )
 
         if (newStudents.length === 0) {
-          setErrorMessage('All students from Excel file already exist in the list')
+          toast.error('All students from Excel file already exist in the list')
           return
         }
 
         setStudents([...students, ...newStudents])
-        setSuccessMessage(`Successfully added ${newStudents.length} students from Excel file`)
-        e.target.value = null // Reset file input
+        toast.success(`Successfully added ${newStudents.length} students from Excel file`)
+        
+        // Reset file input
+        if (e.target) {
+          e.target.value = null
+        }
       } catch (error) {
         console.error('Error processing Excel file:', error)
-        setErrorMessage('Error processing Excel file. Please ensure it\'s a valid Excel file with proper columns')
+        toast.error('Error processing Excel file. Please ensure it\'s a valid Excel file with proper columns')
       }
     }
     reader.readAsArrayBuffer(file)
   }
 
   // Handle form submission
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    
     if (!selectedCourse || !selectedSemester || !selectedSession) {
-      setErrorMessage('Please select all required fields')
+      toast.error('Please fill all required fields')
       return
     }
 
     if (students.length === 0) {
-      setErrorMessage('Please add at least one student')
+      toast.error('Please add at least one student')
       return
     }
+
+    const loadingToast = toast.loading('Saving class details...')
 
     try {
       const response = await axios.post('/api/class', {
@@ -195,21 +217,31 @@ export default function EnterClassPage() {
         students: students
       })
 
-      setSuccessMessage('Class details saved successfully')
-      
-      // Reset form
-      setSelectedCourse('')
-      setSelectedSemester('')
-      setSelectedSession('')
-      setStudents([])
+      toast.dismiss(loadingToast)
+      toast.success('Class details saved successfully', {
+        description: 'Redirecting to student entry...',
+        duration: 2000,
+      })
+
+      // Reset form and redirect after delay
+      setTimeout(() => {
+        setSelectedCourse('')
+        setSelectedSemester('')
+        setSelectedSession('')
+        setStudents([])
+        window.location.href = '/enter-class'
+      }, 2000)
     } catch (error) {
-      console.error('Error saving class details:', error)
-      setErrorMessage(error.response?.data?.error || 'Failed to save class details')
+      toast.dismiss(loadingToast)
+      toast.error('Failed to save class details', {
+        description: error.response?.data?.error || error.message
+      })
     }
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800 p-4">
+      <Toaster position="top-center" expand={true} richColors />
       <div className="container mx-auto space-y-6">
         {/* Error and Success Messages */}
         {errorMessage && (
@@ -306,9 +338,9 @@ export default function EnterClassPage() {
               <div className="space-y-2 p-4 border border-gray-200 rounded-md">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Input 
-                    placeholder="UID" 
-                    value={newStudent.uid}
-                    onChange={(e) => setNewStudent({...newStudent, uid: e.target.value})}
+                    placeholder="Roll No." 
+                    value={newStudent.rollNo}
+                    onChange={(e) => setNewStudent({...newStudent, rollNo: e.target.value})}
                   />
                   <Input 
                     placeholder="Enrollment No." 
@@ -352,7 +384,7 @@ export default function EnterClassPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>UID</TableHead>
+                        <TableHead>Roll No.</TableHead>
                         <TableHead>Enrollment No.</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Actions</TableHead>
@@ -361,7 +393,7 @@ export default function EnterClassPage() {
                     <TableBody>
                       {students.map((student, index) => (
                         <TableRow key={index}>
-                          <TableCell>{student.uid}</TableCell>
+                          <TableCell>{student.rollNo}</TableCell>
                           <TableCell>{student.enrollmentNo}</TableCell>
                           <TableCell>{student.name}</TableCell>
                           <TableCell>

@@ -28,6 +28,42 @@ export async function POST(req) {
       );
     }
 
+    // Validate student data
+    for (const student of data.students) {
+      if (!student.rollNo || !student.enrollmentNo || !student.name) {
+        return new Response(
+          JSON.stringify({ 
+            error: "Invalid student data", 
+            invalidStudent: student 
+          }), 
+          { status: 400 }
+        );
+      }
+    }
+
+    // Check for duplicate roll numbers or enrollment numbers
+    const duplicateRollNos = data.students.filter(
+      (student, index, self) =>
+        self.findIndex(s => s.rollNo === student.rollNo) !== index
+    );
+    const duplicateEnrollmentNos = data.students.filter(
+      (student, index, self) =>
+        self.findIndex(s => s.enrollmentNo === student.enrollmentNo) !== index
+    );
+
+    if (duplicateRollNos.length > 0 || duplicateEnrollmentNos.length > 0) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Duplicate student entries found", 
+          duplicates: {
+            rollNos: duplicateRollNos,
+            enrollmentNos: duplicateEnrollmentNos
+          }
+        }), 
+        { status: 400 }
+      );
+    }
+
     // Verify if the session exists
     const sessionExists = await Sessions.findOne({
       course: data.course,
@@ -65,15 +101,19 @@ export async function POST(req) {
     console.error("Error creating class:", error);
     return new Response(
       JSON.stringify({ 
-        error: "Error creating class", 
-        details: error.message 
+        error: "Failed to create class",
+        details: error.message,
+        validationErrors: error.errors ? Object.keys(error.errors).map(key => ({
+          field: key,
+          message: error.errors[key].message
+        })) : undefined
       }), 
       { status: 500 }
     );
   }
 }
 
-// GET: Fetch classes based on filters
+// GET: Fetch all classes or filter by query params
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -82,26 +122,17 @@ export async function GET(req) {
     const session = searchParams.get('session');
 
     let query = {};
-
-    // Add filters if they exist
     if (course) query.course = course;
     if (semester) query.semester = semester;
     if (session) query.session = session;
-    console.log('Applied filters:', query);
-    // Fetch classes with the applied filters
-    const classes = await ClassDetails.find(query)
-      .populate('course')
-      .exec();
 
-    return new Response(
-      JSON.stringify(classes), 
-      { status: 200 }
-    );
+    const classes = await ClassDetails.find(query).populate('course');
+    return new Response(JSON.stringify(classes), { status: 200 });
   } catch (error) {
     console.error("Error fetching classes:", error);
     return new Response(
       JSON.stringify({ 
-        error: "Error fetching classes", 
+        error: "Failed to fetch classes",
         details: error.message 
       }), 
       { status: 500 }

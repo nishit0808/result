@@ -1,24 +1,26 @@
 'use client'
 
 import * as React from 'react'
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
+  BarChart3,
   BookOpen,
-  GraduationCap,
-  Users,
-  PenLine,
   Calendar,
+  FileInput,
+  GraduationCap,
   Layers,
+  PenLine,
   School,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import Link from 'next/link'
 
 export function ResultAnalysisHomepageComponent() {
   return (
     (<div
-      className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
+      className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
       <div
         className="absolute inset-0 bg-grid-blue-200/50 bg-grid-small [mask-image:radial-gradient(ellipse_at_center,white,transparent_75%)]" />
       <div className="relative container mx-auto px-4 py-16 space-y-16">
@@ -42,28 +44,28 @@ export function ResultAnalysisHomepageComponent() {
                 title: "Class Analysis",
                 description: "Track performance metrics across different classes and sections",
                 icon: Users,
-                link: "/class-analysis",
+                link: "/class",
                 gradient: "from-blue-600 to-blue-400"
               },
               {
                 title: "Subject Analysis",
                 description: "Analyze performance patterns in individual subjects",
                 icon: BookOpen,
-                link: "/subject-analysis",
+                link: "/subject",
                 gradient: "from-blue-500 to-blue-300"
               },
               {
                 title: "Student Analysis",
                 description: "Individual student performance tracking and progress monitoring",
                 icon: GraduationCap,
-                link: "/student-analysis",
+                link: "/student",
                 gradient: "from-blue-700 to-blue-500"
               },
               {
                 title: "Teacher Analysis",
                 description: "Evaluate teaching effectiveness and student outcomes by instructor",
                 icon: UserCheck,
-                link: "/teacher-analysis",
+                link: "/teacher",
                 gradient: "from-blue-800 to-blue-600"
               }
             ].map((item, index) => (
@@ -107,29 +109,36 @@ export function ResultAnalysisHomepageComponent() {
                 title: "Enter Course and Semester",
                 description: "Add new courses and define semesters for academic structure",
                 icon: Calendar,
-                link: "/enter-course-semester",
+                link: "/enterr",
                 gradient: "from-blue-500 to-blue-300"
               },
               {
                 title: "Session Entry Form and Subject Entry",
                 description: "Create academic sessions and add subjects for comprehensive curriculum management",
                 icon: Layers,
-                link: "/session-subject-entry",
+                link: "/sessions",
                 gradient: "from-blue-600 to-blue-400"
               },
               {
                 title: "Enter Class Details",
                 description: "Input class information including subjects and faculty",
                 icon: School,
-                link: "/enter-class-details",
+                link: "/enter-class",
                 gradient: "from-blue-700 to-blue-500"
               },
               {
                 title: "Enter Student Marks",
                 description: "Record individual student marks for various subjects",
                 icon: PenLine,
-                link: "/enter-student-marks",
+                link: "/marks",
                 gradient: "from-blue-800 to-blue-600"
+              },
+              {
+                title: "Enter Teacher Details",
+                description: "Add and update teacher profiles, subject assignments, and class responsibilities",
+                icon: Users,
+                link: "/teacher-subjects",
+                gradient: "from-blue-900 to-blue-700"
               }
             ].map((item, index) => (
               <Card

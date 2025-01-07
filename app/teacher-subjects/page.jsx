@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Plus, Save, Trash2 } from "lucide-react"
+import { Toaster, toast } from 'sonner'
 
 export default function TeacherSubjectsPage() {
   // State for department and teacher
@@ -165,11 +166,12 @@ export default function TeacherSubjectsPage() {
     
     if (!department || !teacherName || subjectSelections.some(s => 
       !s.course || !s.semester || !s.session || !s.subject)) {
-      setErrorMessage('Please fill all fields')
+      toast.error('Please fill all fields')
       return
     }
 
     setIsSubmitting(true)
+    const loadingToast = toast.loading('Saving teacher details...')
 
     try {
       await axios.post('/api/teacher', {
@@ -182,20 +184,32 @@ export default function TeacherSubjectsPage() {
           subject: s.subject
         }))
       })
-      setSuccessMessage('Teacher details saved successfully')
-      // Reset form
-      setTeacherName('')
-      setDepartment('')
-      setShowSubjectSelections(false)
-      setSubjectSelections([{
-        course: '',
-        semester: '',
-        session: '',
-        subject: '',
-        id: Date.now()
-      }])
+      
+      toast.dismiss(loadingToast)
+      toast.success('Teacher details saved successfully', {
+        description: 'Redirecting to marks entry...',
+        duration: 2000,
+      })
+
+      // Reset form and redirect after delay
+      setTimeout(() => {
+        setTeacherName('')
+        setDepartment('')
+        setShowSubjectSelections(false)
+        setSubjectSelections([{
+          course: '',
+          semester: '',
+          session: '',
+          subject: '',
+          id: Date.now()
+        }])
+        window.location.href = '/marks'
+      }, 2000)
     } catch (error) {
-      setErrorMessage('Failed to save teacher details')
+      toast.dismiss(loadingToast)
+      toast.error('Failed to save teacher details', {
+        description: error.response?.data?.message || error.message
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -203,6 +217,7 @@ export default function TeacherSubjectsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800 p-4">
+      <Toaster position="top-center" expand={true} richColors />
       <div className="container mx-auto space-y-6">
         <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
           <CardHeader>

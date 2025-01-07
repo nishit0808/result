@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Student Schema
 const studentSchema = new mongoose.Schema({
-  uid: { type: String, required: true },
+  rollNo: { type: String, required: true },
   enrollmentNo: { type: String, required: true },
   name: { type: String, required: true }
 });
@@ -27,4 +27,7 @@ const classDetailsSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.models.ClassDetails || mongoose.model('ClassDetails', classDetailsSchema);
+// Clear the model if it's already registered
+mongoose.models = {};
+
+module.exports = mongoose.model('ClassDetails', classDetailsSchema);

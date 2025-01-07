@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 // Subject Schema
 const subjectSchema = new mongoose.Schema({
   name: { type: String, required: true }, // Subject name
+  type: { 
+    type: String, 
+    required: true,
+    enum: ['DSC', 'DSE', 'GE', 'AEC', 'SEC', 'VAC', 'XXX', 'None']
+  }, // Subject type
   internal_minMarks: { type: Number, required: true }, // Minimum internal marks
   internal_maxMarks: { type: Number, required: true }, // Maximum internal marks
   external_minMarks: { type: Number, required: true }, // Minimum external marks
@@ -17,4 +22,7 @@ const sessionSchema = new mongoose.Schema({
   ssubjects: [subjectSchema] // Array of subjects for the session
 });
 
-module.exports = mongoose.models.Sessions || mongoose.model('Sessions', sessionSchema);
+// Clear the model if it's already registered
+mongoose.models = {};
+
+module.exports = mongoose.model('Sessions', sessionSchema);

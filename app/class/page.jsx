@@ -1,8 +1,10 @@
 import { ClassAnalyticsDashboardComponent } from '@/components/class-analytics-dashboard'
 import React from 'react'
 
-export default function page() {
+export default function ClassAnalyticsPage() {
   return (
-    <ClassAnalyticsDashboardComponent/>
+    <div className="space-y-6">
+      <ClassAnalyticsDashboardComponent />
+    </div>
   )
 }

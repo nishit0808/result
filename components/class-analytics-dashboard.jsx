@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Bar, BarChart, Pie, PieChart, ResponsiveContainer, Cell, Legend, Tooltip, XAxis, YAxis } from "recharts"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -15,8 +16,12 @@ import {
   Trophy,
   TrendingUp,
   PieChart as PieChartIcon,
+  Download,
 } from "lucide-react";
 import axios from 'axios'
+import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 export function ClassAnalyticsDashboardComponent() {
   const [courses, setCourses] = React.useState([])
@@ -40,6 +45,48 @@ export function ClassAnalyticsDashboardComponent() {
     needsImprovement: [],
     subjectPerformance: []
   })
+
+  const chartRef = React.useRef(null)
+
+  const downloadChartsPDF = async () => {
+    if (!chartRef.current) return;
+
+    try {
+      // Create PDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Add title and metadata
+      pdf.setFontSize(16);
+      pdf.text('Performance Analysis Charts', pageWidth / 2, 15, { align: 'center' });
+      pdf.setFontSize(12);
+      pdf.text(`Class: ${selectedClass}`, 20, 25);
+      pdf.text(`Semester: ${selectedSemester}`, 20, 32);
+      pdf.text(`Session: ${selectedSession}`, 20, 39);
+      pdf.text(`Generated on: ${new Date().toLocaleString()}`, 20, 46);
+
+      // Capture the charts container
+      const canvas = await html2canvas(chartRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      // Convert to image and add to PDF
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = pageWidth - 40; // 20mm margin on each side
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Add the image to PDF
+      pdf.addImage(imgData, 'PNG', 20, 55, imgWidth, imgHeight);
+
+      // Save the PDF
+      pdf.save(`performance-charts-${selectedClass}-${selectedSemester}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    }
+  };
 
   // Helper function to format percentage
   const formatPercentage = (value) => Number(value.toFixed(2))
@@ -430,7 +477,7 @@ export function ClassAnalyticsDashboardComponent() {
 
     // Second pass: Calculate averages and create final array
     const subjectPerformance = Array.from(subjectsMap.entries()).map(([subject, data], index) => ({
-      subject,
+      name: subject,
       average: formatPercentage(data.totalPercentage / data.count),
       maxMarks: data.maxMarks,
       color: `hsl(${210 + (index * 30)}, 70%, 50%)`
@@ -450,6 +497,61 @@ export function ClassAnalyticsDashboardComponent() {
       subjectPerformance
     }))
   }, [studentResults, selectedClass, selectedSemester, selectedSession, courses])
+
+  const generateExcelReport = () => {
+    // Create worksheet data
+    const wsData = [
+      // Headers
+      ['Name', 'Total Marks', 'Percentage', 'Division', 'Failed Subjects'],
+      // Data rows
+      ...studentResults.map(result => {
+        const totalMarks = result.subjects.reduce((acc, subject) => {
+          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
+        }, 0)
+
+        const totalMaxMarks = result.subjects.reduce((acc, subject) => {
+          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
+        }, 0)
+
+        const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100)
+        const failedSubjects = result.subjects.reduce((acc, subject) => {
+          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
+          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
+          return total < minTotal ? acc + 1 : acc
+        }, 0)
+
+        const division = failedSubjects > 2 ? "Fail" : failedSubjects > 0 ? "Supply" : "Pass"
+
+        return [
+          result.name,
+          totalMarks,
+          `${percentage}%`,
+          division,
+          failedSubjects
+        ]
+      })
+    ]
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+    // Add metadata
+    ws['!cols'] = [
+      { wch: 30 }, // Name column width
+      { wch: 15 }, // Total Marks column width
+      { wch: 15 }, // Percentage column width
+      { wch: 15 }, // Division column width
+      { wch: 15 }, // Failed Subjects column width
+    ]
+
+    // Add the worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Student Results')
+
+    // Generate Excel file
+    const fileName = `class-results-${selectedClass}-${selectedSemester}-${selectedSession}.xlsx`
+    XLSX.writeFile(wb, fileName)
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
@@ -549,13 +651,14 @@ export function ClassAnalyticsDashboardComponent() {
               </Card>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 md:grid-cols-2" ref={chartRef}>
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="text-lg font-medium flex items-center">
                     <PieChartIcon className="h-5 w-5 mr-2 text-blue-500" />
                     Student Distribution
                   </CardTitle>
+                  <CardDescription>Distribution of students by performance level</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -563,26 +666,34 @@ export function ClassAnalyticsDashboardComponent() {
                       <PieChart>
                         <Pie
                           data={[
-                            { name: 'Pass', value: analytics.distribution.pass, color: '#4299E1' },
-                            { name: 'Supplementary', value: analytics.distribution.supply, color: '#63B3ED' },
-                            { name: 'Fail', value: analytics.distribution.fail, color: '#90CDF4' }
+                            { name: 'Pass', value: analytics.distribution.pass, color: '#22c55e' },
+                            { name: 'Supply', value: analytics.distribution.supply, color: '#eab308' },
+                            { name: 'Fail', value: analytics.distribution.fail, color: '#ef4444' },
                           ]}
                           cx="50%"
                           cy="50%"
-                          innerRadius={60}
+                          labelLine={true}
+                          label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
                           outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value">
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
                           {[
-                            { name: 'Pass', value: analytics.distribution.pass, color: '#4299E1' },
-                            { name: 'Supplementary', value: analytics.distribution.supply, color: '#63B3ED' },
-                            { name: 'Fail', value: analytics.distribution.fail, color: '#90CDF4' }
+                            { name: 'Pass', value: analytics.distribution.pass, color: '#22c55e' },
+                            { name: 'Supply', value: analytics.distribution.supply, color: '#eab308' },
+                            { name: 'Fail', value: analytics.distribution.fail, color: '#ef4444' },
                           ].map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip />
-                        <Legend />
+                        <Legend
+                          verticalAlign="bottom"
+                          height={36}
+                          formatter={(value, entry) => {
+                            const { payload } = entry;
+                            return `${value}: ${payload.value}`;
+                          }}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -602,43 +713,98 @@ export function ClassAnalyticsDashboardComponent() {
                     <div className="flex items-center justify-center h-[300px]">
                       <div className="text-blue-500">Loading subject data...</div>
                     </div>
-                  ) : analytics.subjectPerformance.length === 0 ? (
-                    <div className="flex items-center justify-center h-[300px]">
-                      <div className="text-gray-500">No subject data available</div>
-                    </div>
                   ) : (
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
+                        <BarChart 
                           data={analytics.subjectPerformance}
-                          layout="vertical"
-                          margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
-                          <XAxis
-                            type="number"
-                            domain={[0, 100]}
-                            tickFormatter={(value) => `${value}%`}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 90 }}
+                        >
+                          <XAxis 
+                            dataKey="name"
+                            angle={-45}
+                            textAnchor="end"
+                            height={90}
+                            interval={0}
+                            tick={{ 
+                              fontSize: 14,
+                              fontWeight: 500,
+                              dy: 10
+                            }}
                           />
                           <YAxis
-                            dataKey="subject"
-                            type="category"
-                            width={90}
-                            style={{ fontSize: '12px' }}
+                            domain={[0, 100]}
+                            ticks={[0, 20, 40, 60, 80, 100]}
+                            label={{ 
+                              value: 'Average Score (%)', 
+                              angle: -90, 
+                              position: 'insideLeft',
+                              style: { 
+                                textAnchor: 'middle',
+                                fontSize: 14,
+                                fontWeight: 500
+                              }
+                            }}
+                            tick={{
+                              fontSize: 12,
+                              fontWeight: 500
+                            }}
                           />
-                          <Tooltip
-                            formatter={(value) => [`${value}%`, 'Average']}
-                            labelStyle={{ color: 'black' }}
-                          />
-                          <Bar dataKey="average" radius={[0, 4, 4, 0]}>
+                          <Bar 
+                            dataKey="average" 
+                            fill="#3b82f6"
+                            barSize={40}
+                            label={(props) => {
+                              const { x, y, value, width } = props;
+                              return (
+                                <text
+                                  x={x + width / 2}
+                                  y={y - 10}
+                                  fill="#4b5563"
+                                  textAnchor="middle"
+                                  fontSize={12}
+                                  fontWeight="500"
+                                >
+                                  {`${value.toFixed(1)}%`}
+                                </text>
+                              );
+                            }}
+                          >
                             {analytics.subjectPerformance.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
+                              <Cell key={`cell-${index}`} fill="#3b82f6" />
                             ))}
                           </Bar>
+                          <Tooltip
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                return (
+                                  <div className="bg-white p-2 border border-gray-200 shadow-lg rounded-lg">
+                                    <p className="font-medium">{payload[0].payload.name}</p>
+                                    <p className="text-blue-600">{`Average: ${payload[0].value.toFixed(2)}%`}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
                   )}
                 </CardContent>
               </Card>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <Button
+                onClick={downloadChartsPDF}
+                variant="secondary"
+                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition-colors"
+                disabled={!studentResults.length}
+              >
+                <Download className="h-4 w-4" />
+                Download Performance Charts
+              </Button>
             </div>
 
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
@@ -652,57 +818,70 @@ export function ClassAnalyticsDashboardComponent() {
                     <div className="text-blue-500">Loading results...</div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="text-left p-4 pl-8 text-gray-600 font-semibold w-1/5">Name</th>
-                          <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Total Marks</th>
-                          <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Percentage</th>
-                          <th className="text-center p-4 text-gray-600 font-semibold w-1/5">Division</th>
-                          <th className="text-right p-4 pr-8 text-gray-600 font-semibold w-1/5">Failed Subjects</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {studentResults.map((result, index) => {
-                          const totalMarks = result.subjects.reduce((acc, subject) => {
-                            return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-                          }, 0)
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b-2 border-gray-200">
+                            <th className="text-left p-4 pl-8 text-gray-600 font-semibold w-1/5">Name</th>
+                            <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Total Marks</th>
+                            <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Percentage</th>
+                            <th className="text-center p-4 text-gray-600 font-semibold w-1/5">Division</th>
+                            <th className="text-right p-4 pr-8 text-gray-600 font-semibold w-1/5">Failed Subjects</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {studentResults.map((result, index) => {
+                            const totalMarks = result.subjects.reduce((acc, subject) => {
+                              return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
+                            }, 0)
 
-                          const totalMaxMarks = result.subjects.reduce((acc, subject) => {
-                            return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-                          }, 0)
+                            const totalMaxMarks = result.subjects.reduce((acc, subject) => {
+                              return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
+                            }, 0)
 
-                          const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100)
-                          const failedSubjects = result.subjects.reduce((acc, subject) => {
-                            const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-                            const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-                            return total < minTotal ? acc + 1 : acc
-                          }, 0)
+                            const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100)
+                            const failedSubjects = result.subjects.reduce((acc, subject) => {
+                              const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
+                              const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
+                              return total < minTotal ? acc + 1 : acc
+                            }, 0)
 
-                          const division = failedSubjects > 2 ? "Fail" : failedSubjects > 0 ? "Supply" : "Pass"
-                          const badgeColor = division === "Pass" ? "bg-green-500" : division === "Supply" ? "bg-yellow-500" : "bg-red-500"
+                            const division = failedSubjects > 2 ? "Fail" : failedSubjects > 0 ? "Supply" : "Pass"
+                            const badgeColor = division === "Pass" ? "bg-green-500" : division === "Supply" ? "bg-yellow-500" : "bg-red-500"
 
-                          return (
-                            <tr 
-                              key={index}
-                              className="border-b border-gray-100 hover:bg-gray-50/50"
-                            >
-                              <td className="p-4 pl-8 font-medium">{result.name}</td>
-                              <td className="p-4 text-right">{totalMarks}</td>
-                              <td className="p-4 text-right">{percentage}%</td>
-                              <td className="p-4 text-center">
-                                <span className={`${badgeColor} text-white px-4 py-1 rounded-full text-sm font-medium`}>
-                                  {division}
-                                </span>
-                              </td>
-                              <td className="p-4 pr-8 text-right">{failedSubjects}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                            return (
+                              <tr 
+                                key={index}
+                                className="border-b border-gray-100 hover:bg-gray-50/50"
+                              >
+                                <td className="p-4 pl-8 font-medium">{result.name}</td>
+                                <td className="p-4 text-right">{totalMarks}</td>
+                                <td className="p-4 text-right">{percentage}%</td>
+                                <td className="p-4 text-center">
+                                  <span className={`${badgeColor} text-white px-4 py-1 rounded-full text-sm font-medium`}>
+                                    {division}
+                                  </span>
+                                </td>
+                                <td className="p-4 pr-8 text-right">{failedSubjects}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-6 flex justify-end">
+                      <Button
+                        onClick={generateExcelReport}
+                        variant="secondary"
+                        className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
+                        disabled={!studentResults.length}
+                      >
+                        <Download className="h-4 w-4" />
+                        Download Excel Report
+                      </Button>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -710,31 +889,25 @@ export function ClassAnalyticsDashboardComponent() {
             <div className="grid gap-6 md:grid-cols-2">
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle className="text-lg font-medium">Top Performers</CardTitle>
+                  <CardTitle className="text-lg font-medium flex items-center">
+                    <Trophy className="h-5 w-5 mr-2 text-blue-500" />
+                    Top Performers
+                  </CardTitle>
                   <CardDescription>Students with exceptional performance</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
+                  <div className="space-y-8">
                     {analytics.topPerformers.map((student, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-sm font-medium">{student.name}</p>
-                            <p className="text-sm text-gray-500">{student.average}% Average</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center">
-                          {student.trend === "up" ? (
-                            <ArrowUpRight className="h-4 w-4 text-green-500 mr-1" />
-                          ) : (
-                            <ArrowDownRight className="h-4 w-4 text-red-500 mr-1" />
-                          )}
-                          <span className={student.trend === "up" ? "text-green-500" : "text-red-500"}>
-                            {student.change}
-                          </span>
+                      <div key={index} className="flex items-center">
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={student.avatar} alt={student.name} />
+                          <AvatarFallback>{student.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="ml-4 space-y-1">
+                          <p className="text-sm font-medium leading-none">{student.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {student.average.toFixed(2)}% Average
+                          </p>
                         </div>
                       </div>
                     ))}

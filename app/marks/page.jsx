@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Toaster, toast } from 'sonner'
 
 export default function MarksEntryPage() {
   // State for dropdowns
@@ -27,6 +28,7 @@ export default function MarksEntryPage() {
   // Error and success messages
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Clear messages after 3 seconds
   useEffect(() => {
@@ -160,12 +162,14 @@ export default function MarksEntryPage() {
   };
 
   // Handle form submission
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+
     if (!selectedStudent || marks.some(mark => 
       mark.internal_obtainedMarks === '' || 
       mark.external_obtainedMarks === ''
     )) {
-      setErrorMessage('Please fill in all marks')
+      toast.error('Please fill in all marks')
       return
     }
 
@@ -175,10 +179,13 @@ export default function MarksEntryPage() {
         Number(mark.internal_obtainedMarks) > mark.internal_maxMarks ||
         Number(mark.external_obtainedMarks) > mark.external_maxMarks
       ) {
-        setErrorMessage('Marks cannot exceed maximum limits')
+        toast.error('Marks cannot exceed maximum limits')
         return
       }
     }
+
+    setIsSubmitting(true)
+    const loadingToast = toast.loading('Saving marks...')
 
     try {
       const marksData = marks.map(mark => ({
@@ -199,17 +206,30 @@ export default function MarksEntryPage() {
         subjects: marksData
       });
 
-      setSuccessMessage('Marks saved successfully')
-      setSelectedStudent('')
-      setMarks([])
+      toast.dismiss(loadingToast)
+      toast.success('Marks saved successfully', {
+        description: 'All student marks have been recorded.',
+        duration: 2000,
+      })
+
+      // Reset form after delay
+      setTimeout(() => {
+        setSelectedStudent('')
+        setMarks([])
+      }, 2000)
     } catch (error) {
-      console.error('Error saving marks:', error)
-      setErrorMessage('Failed to save marks')
+      toast.dismiss(loadingToast)
+      toast.error('Failed to save marks', {
+        description: error.response?.data?.message || error.message
+      })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800 p-4">
+      <Toaster position="top-center" expand={true} richColors />
       <div className="container mx-auto">
         {/* Error and Success Messages */}
         {errorMessage && (
@@ -340,10 +360,10 @@ export default function MarksEntryPage() {
                           Subjects
                         </TableHead>
                         <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
-                          Internal
+                        Continuous Internal Assessment (CIA)
                         </TableHead>
                         <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
-                          External
+                        End Semester Examination (ESE)
                         </TableHead>
                       </TableRow>
                       {/* Second Row */}
@@ -421,7 +441,7 @@ export default function MarksEntryPage() {
                   <Button
                     onClick={handleSubmit}
                     className="w-full mt-4"
-                    disabled={!marks.length}
+                    disabled={!marks.length || isSubmitting}
                   >
                     Save Marks
                   </Button>
