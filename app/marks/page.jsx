@@ -34,6 +34,9 @@ export default function MarksEntryPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // State for withheld checkbox
+  const [isWithheld, setIsWithheld] = useState(false)
+
   // Clear messages after 3 seconds
   useEffect(() => {
     if (errorMessage || successMessage) {
@@ -216,7 +219,8 @@ export default function MarksEntryPage() {
           enrollmentNo: selectedStudentData.enrollmentNo,
           name: selectedStudentData.name
         },
-        subjects: marksData
+        subjects: marksData,
+        isWithheld: isWithheld
       });
 
       toast.dismiss(loadingToast)
@@ -585,7 +589,26 @@ export default function MarksEntryPage() {
 
               {/* Marks Entry Section */}
               {selectedStudent && subjects.length > 0 && (
-                <div className="space-y-2 p-4 border border-gray-200 rounded-md">
+                <div className="space-y-4 p-4 border border-gray-200 rounded-md">
+                  {/* Withheld Checkbox */}
+                  <div className="flex items-center space-x-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <input
+                      type="checkbox"
+                      id="withheld"
+                      checked={isWithheld}
+                      onChange={(e) => setIsWithheld(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                    />
+                    <label htmlFor="withheld" className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Withhold Result
+                    </label>
+                    {isWithheld && (
+                      <span className="text-xs text-red-500 dark:text-red-400 ml-2">
+                        (Student's result will be withheld)
+                      </span>
+                    )}
+                  </div>
+
                   <Table className="w-full border-collapse border border-gray-300">
                     <TableHeader>
                       {/* First Row */}

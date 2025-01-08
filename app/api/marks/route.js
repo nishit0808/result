@@ -49,12 +49,25 @@ export async function POST(req) {
     const options = { 
       new: true, 
       upsert: true,
-      runValidators: true 
+      runValidators: true,
+      setDefaultsOnInsert: true
     };
 
     const result = await StudentMarks.findOneAndUpdate(filter, update, options);
 
-    return NextResponse.json(result);
+    // Format the response
+    const formattedResult = {
+      ...result.toObject(),
+      subjects: result.subjects.map(subject => ({
+        ...subject,
+        total: subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A' 
+          ? 'AB' 
+          : subject.internal_obtainedMarks + subject.external_obtainedMarks
+      })),
+      result: result.isWithheld ? 'WITHHELD' : result.result
+    };
+
+    return NextResponse.json(formattedResult);
   } catch (error) {
     console.error('Error in POST /api/marks:', error);
     return NextResponse.json(

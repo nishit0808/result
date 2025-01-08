@@ -101,6 +101,7 @@ export async function GET(request) {
         return {
           student: studentDetails.name,
           enrollmentNo: studentDetails.enrollmentNo,
+          isWithheld: subject.isWithheld,
           marks: {
             internal_obtainedMarks: subject.internal_obtainedMarks,
             external_obtainedMarks: subject.external_obtainedMarks,
@@ -121,15 +122,31 @@ export async function GET(request) {
     subjectMarks.sort((a, b) => b.marks.total - a.marks.total)
 
     // Calculate class statistics
-    const totalStudents = subjectMarks.length
+    const totalStudents = subjectMarks.length;
+    const withheldResults = subjectMarks.filter(mark => mark.isWithheld).length;
+    const absentStudents = subjectMarks.filter(mark => 
+      !mark.isWithheld && (
+        mark.marks.internal_obtainedMarks === 'A' || 
+        mark.marks.external_obtainedMarks === 'A'
+      )
+    ).length;
+    
     const passedStudents = subjectMarks.filter(mark => 
-      mark.marks.internal_obtainedMarks !== 'A' && mark.marks.external_obtainedMarks !== 'A' &&
+      !mark.isWithheld && 
+      mark.marks.internal_obtainedMarks !== 'A' && 
+      mark.marks.external_obtainedMarks !== 'A' &&
       mark.marks.internal_obtainedMarks >= subjectData.internal_minMarks &&
       mark.marks.external_obtainedMarks >= subjectData.external_minMarks
-    ).length
-    
-    const totalMarks = subjectMarks.reduce((sum, mark) => sum + (mark.marks.total === 'AB' ? 0 : mark.marks.total), 0)
-    const averageMarks = totalStudents > 0 ? totalMarks / totalStudents : 0
+    ).length;
+
+    const totalMarks = subjectMarks.reduce((sum, mark) => {
+      if (mark.isWithheld || mark.marks.total === 'AB') return sum;
+      return sum + (mark.marks.total === 'AB' ? 0 : mark.marks.total);
+    }, 0);
+
+    const averageMarks = totalStudents > (withheldResults + absentStudents) 
+      ? totalMarks / (totalStudents - withheldResults - absentStudents) 
+      : 0;
 
     const response = {
       courseInfo: {
@@ -147,9 +164,11 @@ export async function GET(request) {
       statistics: {
         totalStudents,
         passedStudents,
-        failedStudents: totalStudents - passedStudents,
-        passPercentage: totalStudents > 0 ? (passedStudents / totalStudents) * 100 : 0,
-        classAverage: averageMarks
+        failedStudents: totalStudents - passedStudents - withheldResults - absentStudents,
+        absentStudents,
+        withheldResults,
+        passPercentage: ((passedStudents / (totalStudents - withheldResults)) * 100) || 0,
+        averageMarks: Math.round(averageMarks * 100) / 100
       },
       students: subjectMarks
     }

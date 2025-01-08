@@ -101,7 +101,34 @@ studentMarksSchema.virtual('percentage').get(function() {
 });
 
 studentMarksSchema.virtual('result').get(function() {
-  return this.calculateResult();
+  // If result is withheld, return WITHHELD regardless of other conditions
+  if (this.isWithheld) return 'WITHHELD';
+  
+  if (!this.subjects || !this.subjects.length) return 'FAIL';
+  
+  // Check if student is absent in all subjects
+  const allAbsent = this.subjects.every(subject => 
+    subject.internal_obtainedMarks === 'A' && 
+    subject.external_obtainedMarks === 'A'
+  );
+  if (allAbsent) return 'ABSENT';
+
+  // Check if student is absent in any subject
+  const anyAbsent = this.subjects.some(subject => 
+    subject.internal_obtainedMarks === 'A' || 
+    subject.external_obtainedMarks === 'A'
+  );
+  if (anyAbsent) return 'FAIL';
+
+  // Check if student has failed in any subject
+  const hasFailed = this.subjects.some(subject => {
+    const internal = Number(subject.internal_obtainedMarks);
+    const external = Number(subject.external_obtainedMarks);
+    return internal < subject.internal_minMarks || 
+           external < subject.external_minMarks;
+  });
+
+  return hasFailed ? 'FAIL' : 'PASS';
 });
 
 // Ensure virtuals are included in JSON output
