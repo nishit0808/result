@@ -169,22 +169,25 @@ export default function MarksEntryPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!selectedStudent || marks.some(mark => 
-      mark.internal_obtainedMarks === '' || 
-      mark.external_obtainedMarks === ''
-    )) {
-      toast.error('Please fill in all marks')
-      return
+    if (!selectedStudent || marks.some(mark => {
+      const internal = mark.internal_obtainedMarks;
+      const external = mark.external_obtainedMarks;
+      return (internal === '' || external === '') || 
+             ((internal !== 'A' && isNaN(internal)) || 
+              (external !== 'A' && isNaN(external)));
+    })) {
+      toast.error('Please fill in all marks or mark as absent (A)');
+      return;
     }
 
-    // Validate only maximum marks
+    // Validate maximum marks only for numeric entries
     for (const mark of marks) {
-      if (
-        Number(mark.internal_obtainedMarks) > mark.internal_maxMarks ||
-        Number(mark.external_obtainedMarks) > mark.external_maxMarks
-      ) {
-        toast.error('Marks cannot exceed maximum limits')
-        return
+      if (mark.internal_obtainedMarks !== 'A' && 
+          mark.external_obtainedMarks !== 'A' && 
+          (Number(mark.internal_obtainedMarks) > mark.internal_maxMarks ||
+           Number(mark.external_obtainedMarks) > mark.external_maxMarks)) {
+        toast.error('Marks cannot exceed maximum limits');
+        return;
       }
     }
 
@@ -196,10 +199,10 @@ export default function MarksEntryPage() {
         subjectName: mark.subjectName,
         internal_minMarks: Number(mark.internal_minMarks),
         internal_maxMarks: Number(mark.internal_maxMarks),
-        internal_obtainedMarks: Number(mark.internal_obtainedMarks),
+        internal_obtainedMarks: mark.internal_obtainedMarks === 'A' ? 'A' : Number(mark.internal_obtainedMarks),
         external_minMarks: Number(mark.external_minMarks),
         external_maxMarks: Number(mark.external_maxMarks),
-        external_obtainedMarks: Number(mark.external_obtainedMarks)
+        external_obtainedMarks: mark.external_obtainedMarks === 'A' ? 'A' : Number(mark.external_obtainedMarks)
       }));
 
       const selectedStudentData = students.find(s => s.rollNo === selectedStudent);
@@ -637,13 +640,16 @@ export default function MarksEntryPage() {
                             </TableCell>
                             <TableCell className="border border-gray-300">
                               <Input
-                                type="number"
+                                type="text"
                                 value={marks[index]?.internal_obtainedMarks || ''}
-                                onChange={(e) =>
-                                  handleMarksChange(index, "internal_obtainedMarks", e.target.value)
-                                }
-                                min={subject.internal_minMarks}
-                                max={subject.internal_maxMarks}
+                                onChange={(e) => {
+                                  const value = e.target.value.toUpperCase();
+                                  if (value === '' || value === 'A' || (!isNaN(value) && Number(value) >= 0 && Number(value) <= subject.internal_maxMarks)) {
+                                    handleMarksChange(index, "internal_obtainedMarks", value);
+                                  }
+                                }}
+                                placeholder="Enter marks or 'A'"
+                                className="text-center"
                               />
                             </TableCell>
                             <TableCell className="border border-gray-300">
@@ -654,13 +660,16 @@ export default function MarksEntryPage() {
                             </TableCell>
                             <TableCell className="border border-gray-300">
                               <Input
-                                type="number"
+                                type="text"
                                 value={marks[index]?.external_obtainedMarks || ''}
-                                onChange={(e) =>
-                                  handleMarksChange(index, "external_obtainedMarks", e.target.value)
-                                }
-                                min={subject.external_minMarks}
-                                max={subject.external_maxMarks}
+                                onChange={(e) => {
+                                  const value = e.target.value.toUpperCase();
+                                  if (value === '' || value === 'A' || (!isNaN(value) && Number(value) >= 0 && Number(value) <= subject.external_maxMarks)) {
+                                    handleMarksChange(index, "external_obtainedMarks", value);
+                                  }
+                                }}
+                                placeholder="Enter marks or 'A'"
+                                className="text-center"
                               />
                             </TableCell>
                           </TableRow>

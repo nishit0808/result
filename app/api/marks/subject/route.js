@@ -15,11 +15,21 @@ export async function GET(request) {
 
     console.log('Fetching subject marks with params:', { course, semester, session, subjectName })
 
-    if (!course || !semester || !session || !subjectName) {
+    if (!course || !semester || !session) {
       return NextResponse.json(
         { error: 'Missing required parameters' },
         { status: 400 }
       )
+    }
+
+    const query = {
+      course,
+      semester,
+      session
+    };
+
+    if (subjectName) {
+      query['subjects.subjectName'] = subjectName;
     }
 
     // First, verify if this subject exists in the session and get subject details
@@ -60,12 +70,9 @@ export async function GET(request) {
     }
 
     // Find all student marks for the given criteria
-    const studentMarks = await StudentMarks.find({
-      course,
-      semester,
-      session,
-      'subjects.subjectName': subjectName
-    }).populate('course')
+    const studentMarks = await StudentMarks.find(query)
+      .populate('course', 'name')
+      .select('student subjects')
 
     if (!studentMarks || studentMarks.length === 0) {
       return NextResponse.json(
@@ -97,11 +104,14 @@ export async function GET(request) {
           marks: {
             internal_obtainedMarks: subject.internal_obtainedMarks,
             external_obtainedMarks: subject.external_obtainedMarks,
-            total: subject.total,
+            total: subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
+              ? 'AB'
+              : subject.internal_obtainedMarks + subject.external_obtainedMarks,
             internal_maxMarks: subjectData.internal_maxMarks,
             external_maxMarks: subjectData.external_maxMarks,
             internal_minMarks: subjectData.internal_minMarks,
-            external_minMarks: subjectData.external_minMarks
+            external_minMarks: subjectData.external_minMarks,
+            status: getSubjectStatus(subject)
           }
         }
       })
@@ -113,11 +123,12 @@ export async function GET(request) {
     // Calculate class statistics
     const totalStudents = subjectMarks.length
     const passedStudents = subjectMarks.filter(mark => 
+      mark.marks.internal_obtainedMarks !== 'A' && mark.marks.external_obtainedMarks !== 'A' &&
       mark.marks.internal_obtainedMarks >= subjectData.internal_minMarks &&
       mark.marks.external_obtainedMarks >= subjectData.external_minMarks
     ).length
     
-    const totalMarks = subjectMarks.reduce((sum, mark) => sum + mark.marks.total, 0)
+    const totalMarks = subjectMarks.reduce((sum, mark) => sum + (mark.marks.total === 'AB' ? 0 : mark.marks.total), 0)
     const averageMarks = totalStudents > 0 ? totalMarks / totalStudents : 0
 
     const response = {
@@ -151,4 +162,21 @@ export async function GET(request) {
       { status: 500 }
     )
   }
+}
+
+function getSubjectStatus(subject) {
+  // If either mark is 'A', student is absent
+  if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+    return 'ABSENT';
+  }
+
+  // Check if student has failed
+  const internal = Number(subject.internal_obtainedMarks);
+  const external = Number(subject.external_obtainedMarks);
+  
+  if (internal < subject.internal_minMarks || external < subject.external_minMarks) {
+    return 'FAIL';
+  }
+
+  return 'PASS';
 }
