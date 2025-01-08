@@ -107,6 +107,9 @@ export function StudentMarksheetComponent() {
       }
 
       try {
+        const selectedStudentData = students.find(s => s.rollNo === selectedStudent);
+        if (!selectedStudentData) return;
+
         const response = await axios.get('/api/marks', {
           params: {
             course: selectedCourse,
@@ -124,7 +127,7 @@ export function StudentMarksheetComponent() {
       }
     }
     fetchStudentMarks()
-  }, [selectedStudent, selectedCourse, selectedSemester, selectedSession])
+  }, [selectedStudent, selectedCourse, selectedSemester, selectedSession, students])
 
   const calculateTotal = (internal, external) => Number(internal) + Number(external)
   
@@ -233,8 +236,8 @@ export function StudentMarksheetComponent() {
                 </SelectTrigger>
                 <SelectContent>
                   {students.map((student) => (
-                    <SelectItem key={student.uid} value={student.uid}>
-                      {student.name}
+                    <SelectItem key={student.rollNo} value={student.rollNo}>
+                      {student.name} ({student.rollNo})
                     </SelectItem>
                   ))}
                 </SelectContent>

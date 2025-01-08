@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -22,6 +23,13 @@ import axios from 'axios'
 import * as XLSX from 'xlsx'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+
+const COLORS = {
+  pass: '#22c55e',  // Green
+  fail: '#ef4444',  // Red
+  absent: '#f59e0b', // Amber
+  withheld: '#6b7280' // Gray
+};
 
 export function ClassAnalyticsDashboardComponent() {
   const [courses, setCourses] = React.useState([])
@@ -182,7 +190,8 @@ export function ClassAnalyticsDashboardComponent() {
                 course: selectedCourseData._id,
                 semester: selectedSemester,
                 session: selectedSession,
-                subjects: marksResponse.data.subjects
+                subjects: marksResponse.data.subjects,
+                result: marksResponse.data.result
               }
             } catch (error) {
               console.error(`Error fetching marks for student ${student.name}:`, error)
@@ -282,78 +291,9 @@ export function ClassAnalyticsDashboardComponent() {
 
     // Calculate distribution
     const distribution = {
-      pass: currentStudents.filter(student => {
-        const totalMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
-
-        const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
-
-        const percentage = (totalMarks / totalMaxMarks) * 100
-
-        const failedSubjects = student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        })
-
-        let division = "Pass"
-        if (failedSubjects.length > 0) {
-          division = failedSubjects.length > 2 ? "Fail" : "Supply"
-        }
-
-        return division === "Pass"
-      }).length,
-      supply: currentStudents.filter(student => {
-        const totalMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
-
-        const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
-
-        const percentage = (totalMarks / totalMaxMarks) * 100
-
-        const failedSubjects = student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        })
-
-        let division = "Pass"
-        if (failedSubjects.length > 0) {
-          division = failedSubjects.length > 2 ? "Fail" : "Supply"
-        }
-
-        return division === "Supply"
-      }).length,
-      fail: currentStudents.filter(student => {
-        const totalMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
-
-        const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
-
-        const percentage = (totalMarks / totalMaxMarks) * 100
-
-        const failedSubjects = student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        })
-
-        let division = "Pass"
-        if (failedSubjects.length > 0) {
-          division = failedSubjects.length > 2 ? "Fail" : "Supply"
-        }
-
-        return division === "Fail"
-      }).length
+      pass: currentStudents.filter(student => student.result === 'PASS').length,
+      supply: currentStudents.filter(student => student.result === 'SUPPLY').length,
+      fail: currentStudents.filter(student => student.result === 'FAIL').length
     }
 
     // Get top 3 performers
@@ -372,20 +312,7 @@ export function ClassAnalyticsDashboardComponent() {
           percentage: formatPercentage((totalMarks / totalMaxMarks) * 100)
         }
       })
-      .filter(student => {
-        const failedSubjects = student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        })
-
-        let division = "Pass"
-        if (failedSubjects.length > 0) {
-          division = failedSubjects.length > 2 ? "Fail" : "Supply"
-        }
-
-        return division === "Pass"
-      })
+      .filter(student => student.result === 'PASS')
       .sort((a, b) => b.percentage - a.percentage)
       .slice(0, 3)
       .map(student => ({
@@ -411,30 +338,8 @@ export function ClassAnalyticsDashboardComponent() {
           percentage: formatPercentage((totalMarks / totalMaxMarks) * 100)
         }
       })
-      .filter(student => {
-        const total = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
-
-        const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
-
-        const percentage = (total / totalMaxMarks) * 100
-
-        const failedSubjects = student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        })
-
-        let division = "Pass"
-        if (failedSubjects.length > 0) {
-          division = failedSubjects.length > 2 ? "Fail" : "Supply"
-        }
-
-        return percentage < 70 && division !== "Fail"
-      })
+      .filter(student => student.result !== 'FAIL')
+      .sort((a, b) => a.percentage - b.percentage)
       .slice(0, 3)
       .map(student => ({
         name: student.name,
@@ -666,9 +571,11 @@ export function ClassAnalyticsDashboardComponent() {
                       <PieChart>
                         <Pie
                           data={[
-                            { name: 'Pass', value: analytics.distribution.pass, color: '#22c55e' },
-                            { name: 'Supply', value: analytics.distribution.supply, color: '#eab308' },
-                            { name: 'Fail', value: analytics.distribution.fail, color: '#ef4444' },
+                            { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
+                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
+                            { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
+                            { name: 'Absent', value: studentResults.filter(student => student.result === 'ABSENT').length, color: COLORS.absent },
+                            { name: 'Withheld', value: studentResults.filter(student => student.result === 'WITHHELD').length, color: COLORS.withheld }
                           ]}
                           cx="50%"
                           cy="50%"
@@ -679,9 +586,11 @@ export function ClassAnalyticsDashboardComponent() {
                           dataKey="value"
                         >
                           {[
-                            { name: 'Pass', value: analytics.distribution.pass, color: '#22c55e' },
-                            { name: 'Supply', value: analytics.distribution.supply, color: '#eab308' },
-                            { name: 'Fail', value: analytics.distribution.fail, color: '#ef4444' },
+                            { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
+                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
+                            { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
+                            { name: 'Absent', value: studentResults.filter(student => student.result === 'ABSENT').length, color: COLORS.absent },
+                            { name: 'Withheld', value: studentResults.filter(student => student.result === 'WITHHELD').length, color: COLORS.withheld }
                           ].map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
@@ -847,8 +756,8 @@ export function ClassAnalyticsDashboardComponent() {
                               return total < minTotal ? acc + 1 : acc
                             }, 0)
 
-                            const division = failedSubjects > 2 ? "Fail" : failedSubjects > 0 ? "Supply" : "Pass"
-                            const badgeColor = division === "Pass" ? "bg-green-500" : division === "Supply" ? "bg-yellow-500" : "bg-red-500"
+                            const division = result.result
+                            const badgeColor = division === "PASS" ? "bg-green-500" : division === "SUPPLY" ? "bg-yellow-500" : division === "FAIL" ? "bg-red-500" : division === "ABSENT" ? "bg-amber-500" : "bg-gray-500"
 
                             return (
                               <tr 
