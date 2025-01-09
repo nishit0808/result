@@ -97,46 +97,87 @@ export function TeacherResultAnalysisComponent() {
   // Fetch subject data when a subject is selected
   React.useEffect(() => {
     const fetchSubjectData = async () => {
-      if (selectedSubject === 'all') {
-        // Fetch data for all subjects
+      if (selectedSubject === 'All Subjects') {
         try {
+          // Get unique subjects for the teacher
+          const uniqueSubjects = teacherSubjects.filter((subject, index, self) =>
+            index === self.findIndex((s) => s.subject === subject.subject)
+          );
+
+          // Fetch data for all subjects in parallel
           const allSubjectsData = await Promise.all(
-            teacherSubjects.map(async (subject) => {
-              const response = await axios.get('/api/marks/subject', {
-                params: {
-                  course: subject.course,
-                  semester: subject.semester,
-                  session: subject.session,
-                  subjectName: subject.subject.split('(')[0].trim()
-                }
-              });
-              return response.data;
+            uniqueSubjects.map(async (subject) => {
+              try {
+                const response = await axios.get('/api/marks/subject', {
+                  params: {
+                    course: subject.course,
+                    semester: subject.semester,
+                    session: subject.session,
+                    subjectName: subject.name || subject.subject
+                  }
+                });
+                return {
+                  subjectName: subject.name || subject.subject,
+                  ...response.data
+                };
+              } catch (error) {
+                console.error(`Error fetching data for ${subject.name || subject.subject}:`, error);
+                return null;
+              }
             })
           );
 
-          // Combine statistics
+          // Filter out failed requests and combine the data
+          const validData = allSubjectsData.filter(Boolean);
+          
+          if (validData.length === 0) {
+            toast.error('No data available for any subjects');
+            return;
+          }
+
+          // Calculate combined statistics
           const combinedData = {
-            students: allSubjectsData.flatMap(data => data.students),
+            data: validData.flatMap(subjectData => subjectData.data),
             statistics: {
-              passedStudents: allSubjectsData.reduce((sum, data) => sum + data.statistics.passedStudents, 0),
-              failedStudents: allSubjectsData.reduce((sum, data) => sum + data.statistics.failedStudents, 0),
-              classAverage: allSubjectsData.reduce((sum, data) => sum + data.statistics.classAverage, 0) / allSubjectsData.length,
-              passPercentage: allSubjectsData.reduce((sum, data) => sum + data.statistics.passPercentage, 0) / allSubjectsData.length
+              totalStudents: validData[0].data.length,
+              passedStudents: validData.reduce((total, subject) => 
+                total + subject.statistics.passedStudents, 0) / validData.length,
+              failedStudents: validData.reduce((total, subject) => 
+                total + subject.statistics.failedStudents, 0) / validData.length,
+              absentStudents: validData.reduce((total, subject) => 
+                total + subject.statistics.absentStudents, 0) / validData.length,
+              classAverage: validData.reduce((total, subject) => 
+                total + subject.statistics.classAverage, 0) / validData.length,
+              passPercentage: validData.reduce((total, subject) => 
+                total + subject.statistics.passPercentage, 0) / validData.length
+            },
+            subjectDetails: {
+              name: 'All Subjects',
+              totalStudents: validData[0].data.length
             }
           };
 
           setSubjectData(combinedData);
           
-          // Update student distribution for all subjects
+          // Update student distribution for combined data
           setStudentDistribution([
-            { name: 'Pass', value: combinedData.statistics.passedStudents, color: '#4299E1' },
-            { name: 'Fail', value: combinedData.statistics.failedStudents, color: '#90CDF4' },
+            { 
+              name: 'Pass', 
+              value: Math.round(combinedData.statistics.passedStudents), 
+              color: '#4299E1' 
+            },
+            { 
+              name: 'Fail', 
+              value: Math.round(combinedData.statistics.failedStudents), 
+              color: '#90CDF4' 
+            }
           ]);
+
         } catch (error) {
           console.error('Error fetching all subjects data:', error);
-          toast.error('Failed to fetch combined subjects details');
+          toast.error('Failed to fetch combined subjects data');
         }
-      } else if (selectedSubject) {
+      } else {
         const subject = teacherSubjects.find(s => s.subject === selectedSubject);
         if (subject) {
           try {
@@ -145,17 +186,27 @@ export function TeacherResultAnalysisComponent() {
                 course: subject.course,
                 semester: subject.semester,
                 session: subject.session,
-                subjectName: subject.subject.split('(')[0].trim()
+                subjectName: subject.name || subject.subject
               }
             });
-            setSubjectData(response.data);
             
-            // Update student distribution
-            if (response.data.statistics) {
-              setStudentDistribution([
-                { name: 'Pass', value: response.data.statistics.passedStudents, color: '#4299E1' },
-                { name: 'Fail', value: response.data.statistics.failedStudents, color: '#90CDF4' },
-              ]);
+            if (response.data) {
+              setSubjectData(response.data);
+              
+              if (response.data.statistics) {
+                setStudentDistribution([
+                  { 
+                    name: 'Pass', 
+                    value: response.data.statistics.passedStudents, 
+                    color: '#4299E1' 
+                  },
+                  { 
+                    name: 'Fail', 
+                    value: response.data.statistics.failedStudents, 
+                    color: '#90CDF4' 
+                  }
+                ]);
+              }
             }
           } catch (error) {
             console.error('Error fetching subject data:', error);
@@ -231,7 +282,7 @@ export function TeacherResultAnalysisComponent() {
                   <SelectValue placeholder="Select subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Subjects</SelectItem>
+                  <SelectItem value="All Subjects">All Subjects</SelectItem>
                   {teacherSubjects.map((subject, index) => {
                     const subjectName = subject.subject.split('(')[0].trim()
                     return (
@@ -376,7 +427,7 @@ export function TeacherResultAnalysisComponent() {
                   <TableBody>
                     {teacherSubjects.map((subject, index) => {
                       const subjectName = subject.subject.split('(')[0].trim()
-                      const isSelected = selectedSubject === subject.subject || selectedSubject === 'all'
+                      const isSelected = selectedSubject === subject.subject || selectedSubject === 'All Subjects'
                       return (
                         <TableRow 
                           key={index}
@@ -417,6 +468,7 @@ export function TeacherResultAnalysisComponent() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Student Name</TableHead>
+                        <TableHead>Roll No</TableHead>
                         <TableHead>Internal (CIA)</TableHead>
                         <TableHead>External (ESE)</TableHead>
                         <TableHead>Total</TableHead>
@@ -424,45 +476,34 @@ export function TeacherResultAnalysisComponent() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {subjectData.students.map((student, index) => {
-                        const internalPassed = student.marks.internal_obtainedMarks >= student.marks.internal_minMarks;
-                        const externalPassed = student.marks.external_obtainedMarks >= student.marks.external_minMarks;
-                        const status = internalPassed && externalPassed ? 'Pass' : 'Fail';
+                      {subjectData.data?.map((student, index) => {
+                        const internalMarks = student.internalMarks === 'A' ? 0 : Number(student.internalMarks);
+                        const externalMarks = student.externalMarks === 'A' ? 0 : Number(student.externalMarks);
+                        const totalMarks = student.totalMarks === 'AB' ? 'Absent' : student.totalMarks;
 
                         return (
                           <TableRow key={index}>
-                            <TableCell>{student.student}</TableCell>
+                            <TableCell>{student.studentName}</TableCell>
+                            <TableCell>{student.rollNo}</TableCell>
                             <TableCell>
-                              <span className={!internalPassed ? 'text-red-500 font-medium' : ''}>
-                                {student.marks.internal_obtainedMarks}
-                              </span>
-                              /{student.marks.internal_maxMarks}
-                              <span className="text-xs text-gray-500 ml-1">
-                                (min: {student.marks.internal_minMarks})
+                              <span className={student.result === 'FAIL' ? 'text-red-500 font-medium' : ''}>
+                                {student.internalMarks}
                               </span>
                             </TableCell>
                             <TableCell>
-                              <span className={!externalPassed ? 'text-red-500 font-medium' : ''}>
-                                {student.marks.external_obtainedMarks}
-                              </span>
-                              /{student.marks.external_maxMarks}
-                              <span className="text-xs text-gray-500 ml-1">
-                                (min: {student.marks.external_minMarks})
+                              <span className={student.result === 'FAIL' ? 'text-red-500 font-medium' : ''}>
+                                {student.externalMarks}
                               </span>
                             </TableCell>
                             <TableCell>
-                              {student.marks.total}/
-                              {student.marks.internal_maxMarks + student.marks.external_maxMarks}
-                              <span className="text-xs text-gray-500 ml-1">
-                                ({((student.marks.total / (student.marks.internal_maxMarks + student.marks.external_maxMarks)) * 100).toFixed(1)}%)
-                              </span>
+                              {totalMarks}
                             </TableCell>
                             <TableCell>
                               <Badge 
-                                variant={status === 'Pass' ? 'success' : 'destructive'}
-                                className={status === 'Pass' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}
+                                variant={student.result === 'PASS' ? 'success' : 'destructive'}
+                                className={student.result === 'PASS' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}
                               >
-                                {status}
+                                {student.result}
                               </Badge>
                             </TableCell>
                           </TableRow>
