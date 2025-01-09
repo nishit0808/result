@@ -21,6 +21,28 @@ export async function GET(request) {
       )
     }
 
+    // First, get subject details from session
+    const sessionData = await Sessions.findOne({
+      course,
+      semester,
+      session
+    }).populate('ssubjects')
+
+    if (!sessionData) {
+      return NextResponse.json(
+        { error: 'Session not found' },
+        { status: 404 }
+      )
+    }
+
+    const subjectDetails = sessionData.ssubjects.find(s => s.name === subjectName)
+    if (!subjectDetails) {
+      return NextResponse.json(
+        { error: 'Subject not found in session' },
+        { status: 404 }
+      )
+    }
+
     // Get marks data for the subject
     const marksData = await StudentMarks.find({
       course,
@@ -46,19 +68,22 @@ export async function GET(request) {
       
       if (!subjectMarks) return null;
 
+      const internalMarks = subjectMarks.internal_obtainedMarks;
+      const externalMarks = subjectMarks.external_obtainedMarks;
+      const totalMarks = internalMarks === 'A' || externalMarks === 'A' 
+        ? 'AB'
+        : Number(internalMarks) + Number(externalMarks);
+
       return {
         studentName: record.student?.name || 'Unknown',
         rollNo: record.student?.rollNo || 'Unknown',
-        internalMarks: subjectMarks.internal_obtainedMarks,
-        externalMarks: subjectMarks.external_obtainedMarks,
-        totalMarks: subjectMarks.internal_obtainedMarks === 'A' || subjectMarks.external_obtainedMarks === 'A' 
-          ? 'AB'
-          : Number(subjectMarks.internal_obtainedMarks) + Number(subjectMarks.external_obtainedMarks),
-        maxMarks: subjectMarks.internal_maxMarks + subjectMarks.external_maxMarks,
-        result: subjectMarks.internal_obtainedMarks === 'A' || subjectMarks.external_obtainedMarks === 'A'
+        internalMarks,
+        externalMarks,
+        totalMarks,
+        result: internalMarks === 'A' || externalMarks === 'A'
           ? 'ABSENT'
-          : Number(subjectMarks.internal_obtainedMarks) >= subjectMarks.internal_minMarks &&
-            Number(subjectMarks.external_obtainedMarks) >= subjectMarks.external_minMarks
+          : Number(internalMarks) >= subjectMarks.internal_minMarks &&
+            Number(externalMarks) >= subjectMarks.external_minMarks
             ? 'PASS'
             : 'FAIL'
       }
@@ -80,6 +105,10 @@ export async function GET(request) {
       passedStudents,
       failedStudents,
       absentStudents,
+      passCount: passedStudents,
+      failCount: failedStudents,
+      absentCount: absentStudents,
+      avgMarks: Math.round(classAverage * 100) / 100,
       classAverage: Math.round(classAverage * 100) / 100,
       passPercentage: totalStudents > 0 ? Math.round((passedStudents / totalStudents) * 100) : 0
     };
@@ -89,7 +118,11 @@ export async function GET(request) {
       statistics,
       subjectDetails: {
         name: subjectName,
-        totalStudents: processedData.length
+        totalStudents: processedData.length,
+        internalMax: subjectDetails.internal_maxMarks,
+        externalMax: subjectDetails.external_maxMarks,
+        internalMin: subjectDetails.internal_minMarks,
+        externalMin: subjectDetails.external_minMarks
       }
     })
 

@@ -769,81 +769,100 @@ export function ClassAnalyticsDashboardComponent() {
 
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="text-xl">Student Results Overview</CardTitle>
+                <CardTitle className="text-lg font-medium">Student Results Overview</CardTitle>
+                <CardDescription>Detailed performance of each student</CardDescription>
               </CardHeader>
-              <CardContent className="px-6">
-                {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-blue-500">Loading results...</div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="border-b-2 border-gray-200">
-                            <th className="text-left p-4 pl-8 text-gray-600 font-semibold w-1/5">Name</th>
-                            <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Total Marks</th>
-                            <th className="text-right p-4 text-gray-600 font-semibold w-1/5">Percentage</th>
-                            <th className="text-center p-4 text-gray-600 font-semibold w-1/5">Division</th>
-                            <th className="text-right p-4 pr-8 text-gray-600 font-semibold w-1/5">Failed Subjects</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {studentResults.map((result, index) => {
-                            const totalMarks = result.subjects.reduce((acc, subject) => {
-                              return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-                            }, 0)
+              <CardContent>
+                <div className="relative overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[200px]">Name</TableHead>
+                        <TableHead className="text-right">Total Marks</TableHead>
+                        <TableHead className="text-right">Percentage</TableHead>
+                        <TableHead className="text-center">Division</TableHead>
+                        <TableHead className="text-center">Failed Subjects</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {studentResults.map((result, index) => {
+                        // Calculate total marks and percentage
+                        const totalMarks = result.subjects.reduce((acc, subject) => {
+                          if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+                            return acc;
+                          }
+                          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+                        }, 0);
 
-                            const totalMaxMarks = result.subjects.reduce((acc, subject) => {
-                              return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-                            }, 0)
+                        const totalMaxMarks = result.subjects.reduce((acc, subject) => {
+                          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+                        }, 0);
 
-                            const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100)
-                            const failedSubjects = result.subjects.reduce((acc, subject) => {
-                              const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-                              const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-                              return total < minTotal ? acc + 1 : acc
-                            }, 0)
+                        const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100);
 
-                            const division = result.result
-                            const badgeColor = division === "PASS" ? "bg-green-500" : division === "SUPPLY" ? "bg-yellow-500" : division === "FAIL" ? "bg-red-500" : division === "ABSENT" ? "bg-amber-500" : "bg-gray-500"
+                        // Calculate failed subjects
+                        const failedSubjects = result.subjects.reduce((acc, subject) => {
+                          const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
+                            ? 0
+                            : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
+                          const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
+                          return totalObtained < totalMin ? acc + 1 : acc;
+                        }, 0);
 
-                            return (
-                              <tr 
-                                key={index}
-                                className="border-b border-gray-100 hover:bg-gray-50/50"
-                              >
-                                <td className="p-4 pl-8 text-base font-medium">{result.name}</td>
-                                <td className="p-4 text-base">{totalMarks}</td>
-                                <td className="p-4 text-base">{percentage}%</td>
-                                <td className="p-4 text-center">
-                                  <span className={`${badgeColor} text-white px-4 py-1 rounded-full text-sm font-medium`}>
-                                    {division}
-                                  </span>
-                                </td>
-                                <td className="p-4 pr-8 text-base">{failedSubjects}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="mt-6 flex justify-end">
-                      <Button
-                        onClick={generateExcelReport}
-                        variant="secondary"
-                        className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
-                        disabled={!studentResults.length}
-                      >
-                        <Download className="h-4 w-4" />
-                        Download Excel Report
-                      </Button>
-                    </div>
-                  </>
-                )}
+                        // Determine result status
+                        let status = 'PASS';
+                        let statusColor = 'bg-green-500';
+                        
+                        if (result.isWithheld) {
+                          status = 'WITHHELD';
+                          statusColor = 'bg-yellow-500';
+                        } else if (failedSubjects > 0) {
+                          if (failedSubjects <= 2) {
+                            status = 'SUPPLY';
+                            statusColor = 'bg-orange-500';
+                          } else {
+                            status = 'FAIL';
+                            statusColor = 'bg-red-500';
+                          }
+                        }
+
+                        return (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{result.name}</TableCell>
+                            <TableCell className="text-right">
+                              {totalMarks === 0 ? 'NaN' : totalMarks}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {totalMarks === 0 ? 'NaN' : `${percentage}%`}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge className={`${statusColor} text-white`}>
+                                {status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {failedSubjects}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                onClick={generateExcelReport}
+                variant="secondary"
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
+                disabled={!studentResults.length}
+              >
+                <Download className="h-4 w-4" />
+                Download Excel Report
+              </Button>
+            </div>
 
             <div className="grid gap-6 md:grid-cols-2">
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
