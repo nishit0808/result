@@ -84,16 +84,23 @@ export async function POST(request) {
       semester,
       session,
       $or: [
-        { 'student.uid': student.uid },
-        { 'student.rollNo': student.rollNo }
+        { 'student.rollNo': student.rollNo },
+        { 'student.enrollmentNo': student.enrollmentNo }
       ]
     }
 
     const update = {
       student,
+      course,
+      semester,
+      session,
       subjects: subjects.map(subject => ({
-        ...subject,
+        subjectName: subject.name || subject.subjectName,
+        internal_minMarks: subject.internal_minMarks,
+        internal_maxMarks: subject.internal_maxMarks,
         internal_obtainedMarks: subject.internal_obtainedMarks,
+        external_minMarks: subject.external_minMarks,
+        external_maxMarks: subject.external_maxMarks,
         external_obtainedMarks: subject.external_obtainedMarks
       })),
       isWithheld: isWithheld || false

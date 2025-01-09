@@ -62,8 +62,6 @@ export default function MarksEntryPage() {
     fetchCourses()
   }, [])
 
-  
-
   // Update semesters when course changes
   useEffect(() => {
     if (!selectedCourse) {
@@ -78,31 +76,59 @@ export default function MarksEntryPage() {
     }
   }, [selectedCourse, courses])
 
-  // Fetch sessions when course and semester are selected
+  // Fetch sessions and subjects when course and semester are selected
   useEffect(() => {
-    const fetchSessions = async () => {
+    const fetchSessionsAndSubjects = async () => {
       if (!selectedCourse || !selectedSemester) {
         setSessions([])
+        setSubjects([])
         return
       }
 
       try {
-        const response = await axios.get('/api/sessions')
-        const filteredSessions = response.data
-          .filter(session => session.course._id === selectedCourse)
-          .map(session => session.session)
+        // Fetch sessions
+        const sessionsResponse = await axios.get('/api/sessions')
+        const filteredSessions = sessionsResponse.data
+          .filter(session => 
+            session.course._id === selectedCourse && 
+            session.semester === selectedSemester
+          )
         
-        const uniqueSessions = [...new Set(filteredSessions)]
+        // Get unique session values
+        const uniqueSessions = [...new Set(filteredSessions.map(session => session.session))]
         setSessions(uniqueSessions)
+
+        // If we have a selected session, get the subjects
+        if (selectedSession) {
+          const sessionData = filteredSessions.find(session => 
+            session.session === selectedSession
+          )
+          
+          if (sessionData && sessionData.ssubjects) {
+            const subjectsList = sessionData.ssubjects.map(subject => ({
+              _id: subject._id,
+              name: subject.name,
+              internal_maxMarks: subject.internal_maxMarks,
+              internal_minMarks: subject.internal_minMarks,
+              external_maxMarks: subject.external_maxMarks,
+              external_minMarks: subject.external_minMarks
+            }))
+            setSubjects(subjectsList)
+          } else {
+            setSubjects([])
+          }
+        }
       } catch (error) {
-        console.error('Error fetching sessions:', error)
-        setErrorMessage('Failed to load sessions')
+        console.error('Error fetching sessions and subjects:', error)
+        setErrorMessage('Failed to load sessions and subjects')
+        setSessions([])
+        setSubjects([])
       }
     }
-    fetchSessions()
-  }, [selectedCourse, selectedSemester])
+    fetchSessionsAndSubjects()
+  }, [selectedCourse, selectedSemester, selectedSession])
 
-  // Fetch class details and subjects when all selections are made
+  // Fetch class details when all selections are made
   useEffect(() => {
     const fetchClassDetails = async () => {
       if (!selectedCourse || !selectedSemester || !selectedSession) {
@@ -140,23 +166,6 @@ export default function MarksEntryPage() {
     }
     fetchClassDetails()
   }, [selectedCourse, selectedSemester, selectedSession])
-
-  // Handle subjects fetching
-  useEffect(() => {
-    console.log(`/api/sessions?course=${selectedCourseName}&semester=${selectedSemester}&session=${selectedSession}`)
-    axios.get(`/api/sessions?course=${selectedCourseName}&semester=${selectedSemester}&session=${selectedSession}`)
-      .then(response => {
-        setSubjects(response.data)
-      })
-      .catch(error => {
-        console.error('Error fetching subjects:', error)
-        setErrorMessage('Failed to load subjects')
-      })
-  }, [selectedSession])
-
-  useEffect(() => {
-    console.log('Subjects:', subjects)
-  }, [subjects])
 
   // Handle marks input change
   const handleMarksChange = (index, field, value) => {
@@ -199,7 +208,8 @@ export default function MarksEntryPage() {
 
     try {
       const marksData = marks.map(mark => ({
-        subjectName: mark.subjectName,
+        subjectName: mark.name || mark.subjectName,
+        subject: mark.subject,
         internal_minMarks: Number(mark.internal_minMarks),
         internal_maxMarks: Number(mark.internal_maxMarks),
         internal_obtainedMarks: mark.internal_obtainedMarks === 'A' ? 'A' : Number(mark.internal_obtainedMarks),
@@ -420,142 +430,71 @@ export default function MarksEntryPage() {
                                 }
 
                                 const newMarks = [...marks];
-                                subjects[0].ssubjects.forEach((subject, index) => {
+                                subjects.forEach((subject, index) => {
                                   console.log('Processing subject:', subject.name);
                                   
                                   let internalValue, externalValue;
                                   const availableColumns = Object.keys(studentData);
-                                  let internalColumn, externalColumn;
 
                                   // Helper function to normalize text for comparison
                                   const normalizeText = (text) => {
-                                    return text.replace(/\s+/g, ' ').trim().replace(/\r\n/g, '');
+                                    return text
+                                      .replace(/\r\n/g, ' ')  // Replace newlines with space
+                                      .replace(/\s+/g, ' ')   // Replace multiple spaces with single space
+                                      .trim()
+                                      .toLowerCase();
                                   };
 
-                                  // Match columns based on subject name
-                                  if (subject.name.includes('Calculus')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('Calculus') && !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('Calculus') && col.endsWith('_1')
-                                    );
-                                  } 
-                                  else if (subject.name.includes('Database Management System (BCA-202)')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('Database Management System') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('Database Management System') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('Programming in C++')) {
+                                  // Find matching columns
+                                  const internalColumn = availableColumns.find(col => {
+                                    const normalizedCol = normalizeText(col);
                                     const normalizedSubject = normalizeText(subject.name);
-                                    internalColumn = availableColumns.find(col => {
-                                      const normalizedCol = normalizeText(col);
-                                      return normalizedCol.includes('Programming in C++') && 
-                                             normalizedCol.includes('BCA-203') && 
-                                             !normalizedCol.includes('LAB') && 
-                                             !col.endsWith('_1');
-                                    });
-                                    externalColumn = availableColumns.find(col => {
-                                      const normalizedCol = normalizeText(col);
-                                      return normalizedCol.includes('Programming in C++') && 
-                                             normalizedCol.includes('BCA-203') && 
-                                             !normalizedCol.includes('LAB') && 
-                                             col.endsWith('_1');
-                                    });
-                                  }
-                                  else if (subject.name.includes('Computer Networks')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('Computer Networks') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('Computer Networks') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('Operating System with Linux')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('Operating System with Linux') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('Operating System with Linux') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('Foundation Course')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('Foundation Course') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('Foundation Course') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('LAB-IV: Programming')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-IV: Programming Lab') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-IV: Programming Lab') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('LAB-V: Database')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-V: Database Management System Lab') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-V: Database Management System Lab') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
-                                  else if (subject.name.includes('LAB-V: Operating')) {
-                                    internalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-V: Operating System Lab') && 
-                                      col.includes('BCA-209') && 
-                                      !col.endsWith('_1')
-                                    );
-                                    externalColumn = availableColumns.find(col => 
-                                      col.includes('LAB-V: Operating System Lab') && 
-                                      col.includes('BCA-209') && 
-                                      col.endsWith('_1')
-                                    );
-                                  }
+                                    return normalizedCol === normalizedSubject && !col.endsWith('_1');
+                                  });
+
+                                  const externalColumn = availableColumns.find(col => {
+                                    const normalizedCol = normalizeText(col);
+                                    const normalizedSubject = normalizeText(subject.name);
+                                    return normalizedCol === normalizedSubject + '_1';
+                                  });
+
+                                  console.log('Column matching for:', subject.name, {
+                                    internalColumn,
+                                    externalColumn,
+                                    availableNormalized: availableColumns.map(col => ({
+                                      original: col,
+                                      normalized: normalizeText(col)
+                                    }))
+                                  });
 
                                   if (internalColumn && externalColumn) {
                                     internalValue = studentData[internalColumn];
                                     externalValue = studentData[externalColumn];
                                     
                                     console.log('Found columns for', subject.name, ':', {
-                                      internalColumn,
-                                      externalColumn,
+                                      internal: internalColumn,
+                                      external: externalColumn,
                                       internalValue,
                                       externalValue
                                     });
 
+                                    // Update marks array
                                     newMarks[index] = {
                                       ...newMarks[index],
-                                      internal_obtainedMarks: String(internalValue || ''),
-                                      external_obtainedMarks: String(externalValue || '')
+                                      subjectName: subject.name,
+                                      internal_obtainedMarks: String(internalValue),
+                                      external_obtainedMarks: String(externalValue)
                                     };
                                   } else {
                                     console.log('Could not find columns for', subject.name);
-                                    console.log('Looking for Programming in C++ in:', availableColumns.filter(col => 
-                                      col.includes('Programming')
-                                    ));
+                                    console.log('Available columns:', availableColumns);
+                                    console.log('Looking for:', {
+                                      internal: normalizeText(subject.name),
+                                      external: normalizeText(subject.name) + '_1'
+                                    });
                                   }
                                 });
 
-                                console.log('New marks:', newMarks);
                                 setMarks(newMarks);
                                 toast.success('Marks filled successfully');
                               } catch (error) {
@@ -609,59 +548,52 @@ export default function MarksEntryPage() {
                     )}
                   </div>
 
-                  <Table className="w-full border-collapse border border-gray-300">
+                  <Table className="border-collapse">
                     <TableHeader>
-                      {/* First Row */}
-                      <TableRow className="border border-gray-300">
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" rowSpan={2}>
-                          Subjects
+                      <TableRow>
+                        <TableHead className="py-2 w-[300px]">Subjects</TableHead>
+                        <TableHead className="text-center py-2" colSpan={3}>
+                          Continuous Internal Assessment (CIA)
                         </TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
-                        Continuous Internal Assessment (CIA)
-                        </TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center" colSpan={3}>
-                        End Semester Examination (ESE)
+                        <TableHead className="text-center py-2" colSpan={3}>
+                          End Semester Examination (ESE)
                         </TableHead>
                       </TableRow>
-                      {/* Second Row */}
-                      <TableRow className="border border-gray-300">
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Min</TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Max</TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Marks</TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Min</TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Max</TableHead>
-                        <TableHead className="border border-gray-300 font-mono font-semibold text-center">Marks</TableHead>
+                      <TableRow>
+                        <TableHead></TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[80px]">Min</TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[80px]">Max</TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[100px]">Marks</TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[80px]">Min</TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[80px]">Max</TableHead>
+                        <TableHead className="text-center py-1 px-2 w-[100px]">Marks</TableHead>
                       </TableRow>
                     </TableHeader>
-
-                    {/* Table Body */}
                     <TableBody>
-                      {subjects[0].ssubjects.map((subject, index) => {
+                      {subjects.map((subject, index) => {
                         // Initialize marks array with subject details if not already done
                         if (marks.length === 0 || !marks[index]) {
                           const newMarks = [...marks];
                           newMarks[index] = {
+                            subject: subject._id,
                             subjectName: subject.name,
-                            internal_minMarks: subject.internal_minMarks,
+                            name: subject.name,
                             internal_maxMarks: subject.internal_maxMarks,
-                            external_minMarks: subject.external_minMarks,
+                            internal_minMarks: subject.internal_minMarks,
                             external_maxMarks: subject.external_maxMarks,
+                            external_minMarks: subject.external_minMarks,
                             internal_obtainedMarks: '',
                             external_obtainedMarks: ''
                           };
                           setMarks(newMarks);
                         }
-                        
+
                         return (
-                          <TableRow key={index} className="border border-gray-300">
-                            <TableCell className="border border-gray-300">{subject.name}</TableCell>
-                            <TableCell className="border border-gray-300">
-                              {subject.internal_minMarks}
-                            </TableCell>
-                            <TableCell className="border border-gray-300">
-                              {subject.internal_maxMarks}
-                            </TableCell>
-                            <TableCell className="border border-gray-300">
+                          <TableRow key={subject._id} className="hover:bg-gray-50">
+                            <TableCell className="py-1 px-4 w-[300px]">{subject.name}</TableCell>
+                            <TableCell className="text-center py-1 px-2 w-[80px]">{subject.internal_minMarks}</TableCell>
+                            <TableCell className="text-center py-1 px-2 w-[80px]">{subject.internal_maxMarks}</TableCell>
+                            <TableCell className="text-center py-1 px-2 w-[100px]">
                               <Input
                                 type="text"
                                 value={marks[index]?.internal_obtainedMarks || ''}
@@ -671,17 +603,13 @@ export default function MarksEntryPage() {
                                     handleMarksChange(index, "internal_obtainedMarks", value);
                                   }
                                 }}
-                                placeholder="Enter marks or 'A'"
-                                className="text-center"
+                                placeholder="Enter marks"
+                                className="w-24 h-8 text-center mx-auto text-base"
                               />
                             </TableCell>
-                            <TableCell className="border border-gray-300">
-                              {subject.external_minMarks}
-                            </TableCell>
-                            <TableCell className="border border-gray-300">
-                              {subject.external_maxMarks}
-                            </TableCell>
-                            <TableCell className="border border-gray-300">
+                            <TableCell className="text-center py-1 px-2 w-[80px]">{subject.external_minMarks}</TableCell>
+                            <TableCell className="text-center py-1 px-2 w-[80px]">{subject.external_maxMarks}</TableCell>
+                            <TableCell className="text-center py-1 px-2 w-[100px]">
                               <Input
                                 type="text"
                                 value={marks[index]?.external_obtainedMarks || ''}
@@ -691,9 +619,9 @@ export default function MarksEntryPage() {
                                     handleMarksChange(index, "external_obtainedMarks", value);
                                   }
                                 }}
-                                placeholder="Enter marks or 'A'"
-                                className="text-center"
-                              />
+                                placeholder="Enter marks"
+                                className="w-24 h-8 text-center mx-auto text-base"
+                               />
                             </TableCell>
                           </TableRow>
                         );
