@@ -20,7 +20,7 @@ import {
   Download,
 } from "lucide-react";
 import axios from 'axios'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs';
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
@@ -43,11 +43,13 @@ export function ClassAnalyticsDashboardComponent() {
   const [analytics, setAnalytics] = React.useState({
     classAverage: 0,
     topScore: 0,
-    needSupport: 0,
+    passPercentage: 0,
     distribution: {
       pass: 0,
       supply: 0,
-      fail: 0
+      fail: 0,
+      absent: 0,
+      withheld: 0
     },
     topPerformers: [],
     needsImprovement: [],
@@ -57,47 +59,60 @@ export function ClassAnalyticsDashboardComponent() {
   const chartRef = React.useRef(null)
 
   const downloadChartsPDF = async () => {
-    if (!chartRef.current) return;
+    const element = chartRef.current;
+    if (!element) return;
 
-    try {
-      // Create PDF
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+    const canvas = await html2canvas(element);
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const imgX = (pdfWidth - imgWidth * ratio) / 2;
+    const imgY = 30;
 
-      // Add title and metadata
-      pdf.setFontSize(16);
-      pdf.text('Performance Analysis Charts', pageWidth / 2, 15, { align: 'center' });
-      pdf.setFontSize(12);
-      pdf.text(`Class: ${selectedClass}`, 20, 25);
-      pdf.text(`Semester: ${selectedSemester}`, 20, 32);
-      pdf.text(`Session: ${selectedSession}`, 20, 39);
-      pdf.text(`Generated on: ${new Date().toLocaleString()}`, 20, 46);
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text('Performance Analysis Charts', pdfWidth / 2, 15, { align: 'center' });
 
-      // Capture the charts container
-      const canvas = await html2canvas(chartRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
+    // Add metadata with combined class and semester
+    pdf.setFontSize(12);
+    pdf.text(`Class: ${selectedClass} ${selectedSemester}`, 20, 25);
+    pdf.text(`Session: ${selectedSession}`, 20, 30);
+    pdf.text(`Generated on: ${new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    })}`, 20, 35);
 
-      // Convert to image and add to PDF
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = pageWidth - 40; // 20mm margin on each side
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      // Add the image to PDF
-      pdf.addImage(imgData, 'PNG', 20, 55, imgWidth, imgHeight);
-
-      // Save the PDF
-      pdf.save(`performance-charts-${selectedClass}-${selectedSemester}.pdf`);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-    }
+    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+    pdf.save(`performance-charts-${selectedClass}-${selectedSemester}.pdf`);
   };
 
   // Helper function to format percentage
   const formatPercentage = (value) => Number(value.toFixed(2))
+
+  // Helper function to calculate result based on failed subjects
+  const calculateStudentResult = (subjects) => {
+    if (!subjects) return 'UNKNOWN';
+    
+    const failedSubjects = subjects.filter(subject => {
+      const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A' 
+        ? 0 
+        : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
+      const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
+      return totalObtained < totalMin;
+    });
+
+    if (failedSubjects.length === 0) return 'PASS';
+    if (failedSubjects.length <= 2) return 'SUPPLY';
+    return 'FAIL';
+  };
 
   // Fetch courses on mount
   React.useEffect(() => {
@@ -157,7 +172,6 @@ export function ClassAnalyticsDashboardComponent() {
         const selectedCourseData = courses.find(course => course.name === selectedClass)
         if (!selectedCourseData) return
 
-        // First get all students in the class
         const classResponse = await axios.get('/api/class', {
           params: {
             course: selectedCourseData._id,
@@ -170,7 +184,6 @@ export function ClassAnalyticsDashboardComponent() {
           throw new Error('No students found in class')
         }
 
-        // For each student, fetch their marks
         const studentsWithMarks = await Promise.all(
           classResponse.data[0].students.map(async (student) => {
             try {
@@ -179,20 +192,34 @@ export function ClassAnalyticsDashboardComponent() {
                   course: selectedCourseData._id,
                   semester: selectedSemester,
                   session: selectedSession,
-                  student: student.uid
+                  student: student.rollNo || student.uid
                 }
               })
 
               if (!marksResponse.data?.subjects) return null
 
+              // Calculate result based on failed subjects
+              const result = marksResponse.data.isWithheld 
+                ? 'WITHHELD'
+                : calculateStudentResult(marksResponse.data.subjects);
+
               return {
                 name: student.name,
+                rollNo: student.rollNo,
+                uid: student.uid,
                 course: selectedCourseData._id,
                 semester: selectedSemester,
                 session: selectedSession,
                 subjects: marksResponse.data.subjects,
-                result: marksResponse.data.result
-              }
+                result: result,
+                failedSubjects: marksResponse.data.subjects.filter(subject => {
+                  const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
+                    ? 0
+                    : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
+                  const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
+                  return totalObtained < totalMin;
+                }).length
+              };
             } catch (error) {
               console.error(`Error fetching marks for student ${student.name}:`, error)
               return null
@@ -200,12 +227,10 @@ export function ClassAnalyticsDashboardComponent() {
           })
         )
 
-        // Filter out null results
         const validResults = studentsWithMarks.filter(result => result !== null)
         setStudentResults(validResults)
       } catch (error) {
         console.error('Error fetching student results:', error)
-        setStudentResults([])
       } finally {
         setLoading(false)
       }
@@ -219,8 +244,8 @@ export function ClassAnalyticsDashboardComponent() {
     setAnalytics({
       classAverage: 0,
       topScore: 0,
-      needSupport: 0,
-      distribution: { pass: 0, supply: 0, fail: 0 },
+      passPercentage: 0,
+      distribution: { pass: 0, supply: 0, fail: 0, absent: 0, withheld: 0 },
       topPerformers: [],
       needsImprovement: [],
       subjectPerformance: []
@@ -229,234 +254,263 @@ export function ClassAnalyticsDashboardComponent() {
 
   // Calculate analytics from student results
   React.useEffect(() => {
-    if (studentResults.length === 0 || !selectedClass || !selectedSemester || !selectedSession) {
-      return
+    if (!studentResults.length) {
+      setAnalytics({
+        classAverage: 0,
+        topScore: 0,
+        passPercentage: 0,
+        distribution: { pass: 0, supply: 0, fail: 0, absent: 0, withheld: 0 },
+        topPerformers: [],
+        needsImprovement: [],
+        subjectPerformance: {}
+      });
+      return;
     }
 
-    // Get the selected course data
-    const selectedCourseData = courses.find(course => course.name === selectedClass)
-    if (!selectedCourseData) return
+    const currentStudents = studentResults.filter(Boolean);
 
-    // Filter students for current selection first
-    const currentStudents = studentResults.filter(student => 
-      student.course === selectedCourseData._id && 
-      student.semester === selectedSemester && 
-      student.session === selectedSession
-    )
-
-    if (currentStudents.length === 0) return
-
-    // Calculate class average from filtered students
-    const totalPercentage = currentStudents.reduce((acc, student) => {
+    // Calculate top score
+    const topScore = Math.max(...currentStudents.map(student => {
       const totalMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-      }, 0)
+        if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+          return acc;
+        }
+        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+      }, 0);
 
       const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-      }, 0)
+        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+      }, 0);
 
-      const percentage = (totalMarks / totalMaxMarks) * 100
-      return acc + percentage
-    }, 0)
+      return (totalMarks / totalMaxMarks) * 100;
+    }));
 
-    const classAverage = formatPercentage(totalPercentage / currentStudents.length)
-
-    // Find top score
-    const topScore = formatPercentage(Math.max(...currentStudents.map(student => {
-      const totalMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-      }, 0)
-
-      const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-      }, 0)
-
-      return (totalMarks / totalMaxMarks) * 100
-    })))
-
-    // Count students needing support (below 70%)
-    const needSupport = currentStudents.filter(student => {
-      const totalMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-      }, 0)
-
-      const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-      }, 0)
-
-      const percentage = (totalMarks / totalMaxMarks) * 100
-      return percentage < 70
-    }).length
+    // Calculate pass percentage
+    const totalStudents = currentStudents.length;
+    const passedStudents = currentStudents.filter(student => student.result === 'PASS').length;
+    const passPercentage = totalStudents > 0 ? (passedStudents / totalStudents) * 100 : 0;
 
     // Calculate distribution
     const distribution = {
       pass: currentStudents.filter(student => student.result === 'PASS').length,
       supply: currentStudents.filter(student => student.result === 'SUPPLY').length,
-      fail: currentStudents.filter(student => student.result === 'FAIL').length
-    }
+      fail: currentStudents.filter(student => student.result === 'FAIL').length,
+      absent: currentStudents.filter(student => student.result === 'ABSENT').length,
+      withheld: currentStudents.filter(student => student.result === 'WITHHELD').length
+    };
 
     // Get top 3 performers
     const topPerformers = currentStudents
       .map(student => {
         const totalMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
+          if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+            return acc;
+          }
+          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+        }, 0);
 
         const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
+          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+        }, 0);
 
         return {
-          ...student,
-          percentage: formatPercentage((totalMarks / totalMaxMarks) * 100)
-        }
+          name: student.name,
+          rollNo: student.rollNo,
+          totalMarks,
+          totalMaxMarks,
+          percentage: (totalMarks / totalMaxMarks) * 100
+        };
       })
-      .filter(student => student.result === 'PASS')
+      .filter(student => student.percentage > 0 && !isNaN(student.percentage))
       .sort((a, b) => b.percentage - a.percentage)
       .slice(0, 3)
       .map(student => ({
         name: student.name,
-        average: student.percentage,
-        trend: "up", // You could make this dynamic by comparing with previous results
-        change: "+2%" // You could calculate this from historical data
-      }))
+        rollNo: student.rollNo,
+        percentage: formatPercentage(student.percentage)
+      }));
 
-    // Get bottom 3 performers who haven't failed
+    // Get students needing improvement (below 70% but passed)
     const needsImprovement = currentStudents
       .map(student => {
         const totalMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
+          if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+            return acc;
+          }
+          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+        }, 0);
 
         const totalMaxMarks = student.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
+          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+        }, 0);
+
+        const percentage = (totalMarks / totalMaxMarks) * 100;
 
         return {
-          ...student,
-          percentage: formatPercentage((totalMarks / totalMaxMarks) * 100)
-        }
+          name: student.name,
+          rollNo: student.rollNo,
+          percentage,
+          result: student.result
+        };
       })
-      .filter(student => student.result !== 'FAIL')
+      .filter(student => 
+        student.percentage > 0 && 
+        student.percentage < 70 && 
+        student.result === 'PASS'
+      )
       .sort((a, b) => a.percentage - b.percentage)
       .slice(0, 3)
       .map(student => ({
         name: student.name,
-        average: student.percentage,
-        failedSubjects: student.subjects.filter(subject => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal
-        }).length
-      }))
+        rollNo: student.rollNo,
+        percentage: formatPercentage(student.percentage)
+      }));
 
-    // Calculate subject performance only for the current course, semester, and session
-    const subjectsMap = new Map()
+    // Calculate class average
+    const validStudents = currentStudents.filter(student => 
+      student.result !== 'ABSENT' && 
+      student.result !== 'WITHHELD'
+    );
 
-    // First pass: Collect total marks and count for each subject
-    currentStudents.forEach(student => {
-      if (!student.subjects) return
+    let classAverage = 0;
+    if (validStudents.length > 0) {
+      const totalPercentage = validStudents.reduce((acc, student) => {
+        const totalMarks = student.subjects.reduce((acc, subject) => {
+          if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+            return acc;
+          }
+          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+        }, 0);
 
-      student.subjects.forEach(subject => {
-        const totalMarks = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-        const maxMarks = Number(subject.internal_maxMarks) + Number(subject.external_maxMarks)
-        const percentage = formatPercentage((totalMarks / maxMarks) * 100)
+        const totalMaxMarks = student.subjects.reduce((acc, subject) => {
+          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+        }, 0);
 
-        if (!subjectsMap.has(subject.subjectName)) {
-          subjectsMap.set(subject.subjectName, {
-            totalPercentage: percentage,
-            count: 1,
-            maxMarks: maxMarks
-          })
-        } else {
-          const current = subjectsMap.get(subject.subjectName)
-          subjectsMap.set(subject.subjectName, {
-            totalPercentage: current.totalPercentage + percentage,
-            count: current.count + 1,
-            maxMarks: maxMarks
-          })
+        return acc + ((totalMarks / totalMaxMarks) * 100);
+      }, 0);
+
+      classAverage = totalPercentage / validStudents.length;
+    }
+
+    // Calculate subject-wise performance
+    const subjectPerformance = {};
+    if (currentStudents.length > 0 && currentStudents[0].subjects) {
+      currentStudents[0].subjects.forEach(subject => {
+        const subjectName = subject.subjectName;
+        let totalPercentage = 0;
+        let validCount = 0;
+
+        currentStudents.forEach(student => {
+          const subjectData = student.subjects.find(s => s.subjectName === subjectName);
+          if (subjectData && 
+              subjectData.internal_obtainedMarks !== 'A' && 
+              subjectData.external_obtainedMarks !== 'A') {
+            const obtained = Number(subjectData.internal_obtainedMarks) + Number(subjectData.external_obtainedMarks);
+            const total = Number(subjectData.internal_maxMarks) + Number(subjectData.external_maxMarks);
+            totalPercentage += (obtained / total) * 100;
+            validCount++;
+          }
+        });
+
+        if (validCount > 0) {
+          subjectPerformance[subjectName] = totalPercentage / validCount;
         }
-      })
-    })
+      });
+    }
 
-    // Second pass: Calculate averages and create final array
-    const subjectPerformance = Array.from(subjectsMap.entries()).map(([subject, data], index) => ({
-      name: subject,
-      average: formatPercentage(data.totalPercentage / data.count),
-      maxMarks: data.maxMarks,
-      color: `hsl(${210 + (index * 30)}, 70%, 50%)`
-    }))
-
-    // Sort subjects by average performance
-    subjectPerformance.sort((a, b) => b.average - a.average)
-
-    setAnalytics(prev => ({
-      ...prev,
-      classAverage,
-      topScore,
-      needSupport,
+    setAnalytics({
       distribution,
       topPerformers,
       needsImprovement,
+      classAverage: formatPercentage(classAverage),
+      topScore: formatPercentage(topScore),
+      passPercentage: formatPercentage(passPercentage),
       subjectPerformance
-    }))
+    })
   }, [studentResults, selectedClass, selectedSemester, selectedSession, courses])
 
-  const generateExcelReport = () => {
-    // Create worksheet data
-    const wsData = [
-      // Headers
-      ['Name', 'Total Marks', 'Percentage', 'Division', 'Failed Subjects'],
-      // Data rows
-      ...studentResults.map(result => {
-        const totalMarks = result.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks))
-        }, 0)
+  const generateExcelReport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Student Results');
 
-        const totalMaxMarks = result.subjects.reduce((acc, subject) => {
-          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks))
-        }, 0)
+    // Add title and metadata
+    worksheet.addRow(['Performance Analysis Report']);
+    worksheet.addRow(['']);  // Empty row for spacing
+    worksheet.addRow([`Class: ${selectedClass} ${selectedSemester}`]);
+    worksheet.addRow([`Session: ${selectedSession}`]);
+    worksheet.addRow([`Generated on: ${new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    })}`]);
+    worksheet.addRow(['']);  // Empty row for spacing
 
-        const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100)
-        const failedSubjects = result.subjects.reduce((acc, subject) => {
-          const total = Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks)
-          const minTotal = Number(subject.internal_minMarks) + Number(subject.external_minMarks)
-          return total < minTotal ? acc + 1 : acc
-        }, 0)
+    // Add column headers
+    const headerRow = worksheet.addRow(['Name', 'Total Marks', 'Percentage', 'Division', 'Failed Subjects']);
+    headerRow.font = { bold: true };
+    
+    // Add student data
+    studentResults.forEach(result => {
+      const failedSubjectsCount = result.subjects.reduce((acc, subject) => {
+        const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
+          ? 0
+          : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
+        const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
+        return totalObtained < totalMin ? acc + 1 : acc;
+      }, 0);
 
-        const division = failedSubjects > 2 ? "Fail" : failedSubjects > 0 ? "Supply" : "Pass"
+      const totalMarks = result.subjects.reduce((acc, subject) => {
+        if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+          return acc;
+        }
+        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+      }, 0);
 
-        return [
-          result.name,
-          totalMarks,
-          `${percentage}%`,
-          division,
-          failedSubjects
-        ]
-      })
-    ]
+      const totalMaxMarks = result.subjects.reduce((acc, subject) => {
+        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+      }, 0);
 
-    // Create workbook and worksheet
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.aoa_to_sheet(wsData)
+      const percentage = (totalMarks / totalMaxMarks) * 100;
 
-    // Add metadata
-    ws['!cols'] = [
-      { wch: 30 }, // Name column width
-      { wch: 15 }, // Total Marks column width
-      { wch: 15 }, // Percentage column width
-      { wch: 15 }, // Division column width
-      { wch: 15 }, // Failed Subjects column width
-    ]
+      worksheet.addRow([
+        result.name,
+        totalMarks,
+        formatPercentage(percentage),
+        result.result,
+        failedSubjectsCount
+      ]);
+    });
 
-    // Add the worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Student Results')
+    // Style title and metadata
+    worksheet.getCell('A1').font = { bold: true, size: 14 };
+    worksheet.getCell('A3').font = { bold: true };
+    worksheet.getCell('A4').font = { bold: true };
+    worksheet.getCell('A5').font = { bold: true };
 
-    // Generate Excel file
-    const fileName = `class-results-${selectedClass}-${selectedSemester}-${selectedSession}.xlsx`
-    XLSX.writeFile(wb, fileName)
-  }
+    // Set column widths
+    worksheet.columns = [
+      { width: 30 },  // Name
+      { width: 15 },  // Total Marks
+      { width: 15 },  // Percentage
+      { width: 15 },  // Division
+      { width: 15 }   // Failed Subjects
+    ];
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    // Create blob and download
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `performance-report-${selectedClass}-${selectedSemester}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
@@ -523,50 +577,62 @@ export function ClassAnalyticsDashboardComponent() {
 
         {selectedClass && selectedSemester && selectedSession ? (
           <>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Class Average</CardTitle>
-                  <BookOpen className="h-6 w-6 text-blue-200" />
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
+              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Class Average
+                  </CardTitle>
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{analytics.classAverage}%</div>
-                  <p className="text-sm text-blue-200">Overall class performance</p>
+                  <div className="text-2xl font-bold">{analytics.classAverage}%</div>
+                  <p className="text-xs text-muted-foreground">
+                    Overall class performance
+                  </p>
                 </CardContent>
               </Card>
-              <Card className="bg-gradient-to-br from-blue-500 to-blue-700 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Top Score</CardTitle>
-                  <Trophy className="h-6 w-6 text-blue-200" />
+              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Top Score
+                  </CardTitle>
+                  <Trophy className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{analytics.topScore}%</div>
-                  <p className="text-sm text-blue-200">Highest percentage achieved</p>
+                  <div className="text-2xl font-bold">{analytics.topScore}%</div>
+                  <p className="text-xs text-muted-foreground">
+                    Highest percentage achieved
+                  </p>
                 </CardContent>
               </Card>
-              <Card className="bg-gradient-to-br from-blue-600 to-blue-800 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Need Support</CardTitle>
-                  <AlertTriangle className="h-6 w-6 text-blue-200" />
+              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Pass Percentage
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{analytics.needSupport}</div>
-                  <p className="text-sm text-blue-200">Students below 70%</p>
+                  <div className="text-2xl font-bold">{analytics.passPercentage}%</div>
+                  <p className="text-xs text-muted-foreground">
+                    Students passed
+                  </p>
                 </CardContent>
               </Card>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2" ref={chartRef}>
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+            <div className="grid gap-6 grid-cols-1" ref={chartRef}>
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg font-medium flex items-center">
-                    <PieChartIcon className="h-5 w-5 mr-2 text-blue-500" />
+                  <CardTitle className="flex items-center gap-2 text-lg font-medium">
+                    <PieChartIcon className="h-5 w-5 text-muted-foreground" />
                     Student Distribution
                   </CardTitle>
                   <CardDescription>Distribution of students by performance level</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="flex flex-col items-center justify-center h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -574,14 +640,14 @@ export function ClassAnalyticsDashboardComponent() {
                             { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
                             { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
                             { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
-                            { name: 'Absent', value: studentResults.filter(student => student.result === 'ABSENT').length, color: COLORS.absent },
-                            { name: 'Withheld', value: studentResults.filter(student => student.result === 'WITHHELD').length, color: COLORS.withheld }
-                          ]}
+                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent },
+                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld }
+                          ].filter(item => item.value > 0)}
                           cx="50%"
                           cy="50%"
                           labelLine={true}
                           label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
-                          outerRadius={80}
+                          outerRadius={90}
                           fill="#8884d8"
                           dataKey="value"
                         >
@@ -589,117 +655,82 @@ export function ClassAnalyticsDashboardComponent() {
                             { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
                             { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
                             { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
-                            { name: 'Absent', value: studentResults.filter(student => student.result === 'ABSENT').length, color: COLORS.absent },
-                            { name: 'Withheld', value: studentResults.filter(student => student.result === 'WITHHELD').length, color: COLORS.withheld }
+                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent },
+                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld }
                           ].map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Legend
-                          verticalAlign="bottom"
-                          height={36}
-                          formatter={(value, entry) => {
-                            const { payload } = entry;
-                            return `${value}: ${payload.value}`;
+                        <Legend 
+                          layout="horizontal" 
+                          verticalAlign="bottom" 
+                          align="center"
+                          formatter={(value, entry, index) => {
+                            const item = [
+                              { name: 'Pass', value: analytics.distribution.pass },
+                              { name: 'Supply', value: analytics.distribution.supply },
+                              { name: 'Fail', value: analytics.distribution.fail },
+                              { name: 'Absent', value: analytics.distribution.absent },
+                              { name: 'Withheld', value: analytics.distribution.withheld }
+                            ][index];
+                            return `${item.name}: ${item.value}`;
                           }}
                         />
+                        <Tooltip />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg font-medium flex items-center">
-                    <TrendingUp className="h-5 w-5 mr-2 text-blue-500" />
+                  <CardTitle className="flex items-center gap-2 text-lg font-medium">
+                    <TrendingUp className="h-5 w-5 text-muted-foreground" />
                     Subject Performance
                   </CardTitle>
                   <CardDescription>Average performance by subject</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loading ? (
-                    <div className="flex items-center justify-center h-[300px]">
-                      <div className="text-blue-500">Loading subject data...</div>
-                    </div>
-                  ) : (
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart 
-                          data={analytics.subjectPerformance}
-                          margin={{ top: 20, right: 30, left: 20, bottom: 90 }}
+                  <div className="h-[450px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={Object.keys(analytics.subjectPerformance).map(key => ({ name: key, average: analytics.subjectPerformance[key] }))}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 140 }}
+                      >
+                        <XAxis 
+                          dataKey="name" 
+                          angle={-45}
+                          textAnchor="end"
+                          height={120}
+                          interval={0}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <YAxis 
+                          label={{ 
+                            value: 'Average Score (%)', 
+                            angle: -90, 
+                            position: 'insideLeft',
+                            style: { textAnchor: 'middle' }
+                          }}
+                        />
+                        <Tooltip />
+                        <Bar 
+                          dataKey="average" 
+                          fill="#3b82f6"
+                          label={{
+                            position: 'top',
+                            formatter: (value) => `${value.toFixed(1)}%`,
+                            style: { fontSize: '12px' }
+                          }}
                         >
-                          <XAxis 
-                            dataKey="name"
-                            angle={-45}
-                            textAnchor="end"
-                            height={90}
-                            interval={0}
-                            tick={{ 
-                              fontSize: 14,
-                              fontWeight: 500,
-                              dy: 10
-                            }}
-                          />
-                          <YAxis
-                            domain={[0, 100]}
-                            ticks={[0, 20, 40, 60, 80, 100]}
-                            label={{ 
-                              value: 'Average Score (%)', 
-                              angle: -90, 
-                              position: 'insideLeft',
-                              style: { 
-                                textAnchor: 'middle',
-                                fontSize: 14,
-                                fontWeight: 500
-                              }
-                            }}
-                            tick={{
-                              fontSize: 12,
-                              fontWeight: 500
-                            }}
-                          />
-                          <Bar 
-                            dataKey="average" 
-                            fill="#3b82f6"
-                            barSize={40}
-                            label={(props) => {
-                              const { x, y, value, width } = props;
-                              return (
-                                <text
-                                  x={x + width / 2}
-                                  y={y - 10}
-                                  fill="#4b5563"
-                                  textAnchor="middle"
-                                  fontSize={12}
-                                  fontWeight="500"
-                                >
-                                  {`${value.toFixed(1)}%`}
-                                </text>
-                              );
-                            }}
-                          >
-                            {analytics.subjectPerformance.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill="#3b82f6" />
-                            ))}
-                          </Bar>
-                          <Tooltip
-                            content={({ active, payload }) => {
-                              if (active && payload && payload.length) {
-                                return (
-                                  <div className="bg-white p-2 border border-gray-200 shadow-lg rounded-lg">
-                                    <p className="font-medium">{payload[0].payload.name}</p>
-                                    <p className="text-blue-600">{`Average: ${payload[0].value.toFixed(2)}%`}</p>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                          {Object.keys(analytics.subjectPerformance).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill="#3b82f6" />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -815,7 +846,7 @@ export function ClassAnalyticsDashboardComponent() {
                         <div className="ml-4 space-y-1">
                           <p className="text-sm font-medium leading-none">{student.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {student.average.toFixed(2)}% Average
+                            {student.percentage.toFixed(2)}% Average
                           </p>
                         </div>
                       </div>
@@ -839,7 +870,7 @@ export function ClassAnalyticsDashboardComponent() {
                           </Avatar>
                           <div>
                             <p className="text-sm font-medium">{student.name}</p>
-                            <p className="text-sm text-gray-500">{student.average}% Average</p>
+                            <p className="text-sm text-gray-500">{student.percentage}% Average</p>
                           </div>
                         </div>
                         <Badge variant="outline" className="ml-2">

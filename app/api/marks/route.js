@@ -17,12 +17,15 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
     }
 
-    // Find student marks
+    // Find student marks - search by either uid or rollNo
     const studentMarks = await StudentMarks.findOne({
       course,
       semester,
       session,
-      'student.rollNo': student
+      $or: [
+        { 'student.uid': student },
+        { 'student.rollNo': student }
+      ]
     }).lean()
 
     if (!studentMarks) {
@@ -80,7 +83,10 @@ export async function POST(request) {
       course,
       semester,
       session,
-      'student.rollNo': student.rollNo
+      $or: [
+        { 'student.uid': student.uid },
+        { 'student.rollNo': student.rollNo }
+      ]
     }
 
     const update = {
