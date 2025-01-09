@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import connectDB from "@/lib/mongoose"
 import StudentMarks from "../../models/StudentMarks"
-import ClassDetails from "../../models/ClassDetails"
 import Sessions from "../../models/Sessions"
 
 export async function GET(request) {
@@ -15,24 +14,14 @@ export async function GET(request) {
 
     console.log('Fetching subject marks with params:', { course, semester, session, subjectName })
 
-    if (!course || !semester || !session) {
+    if (!course || !semester || !session || !subjectName) {
       return NextResponse.json(
         { error: 'Missing required parameters' },
         { status: 400 }
       )
     }
 
-    const query = {
-      course,
-      semester,
-      session
-    };
-
-    if (subjectName) {
-      query['subjects.subjectName'] = subjectName;
-    }
-
-    // First, verify if this subject exists in the session and get subject details
+    // First, get subject details from session
     const sessionData = await Sessions.findOne({
       course,
       semester,
@@ -46,156 +35,115 @@ export async function GET(request) {
       )
     }
 
-    // Get the subject details including min marks from session data
-    const subjectData = sessionData.ssubjects.find(sub => sub.name === subjectName)
-    if (!subjectData) {
+    const subjectDetails = sessionData.ssubjects.find(s => s.name === subjectName)
+    if (!subjectDetails) {
       return NextResponse.json(
-        { error: 'Subject not found in this session' },
+        { error: 'Subject not found in session' },
         { status: 404 }
       )
     }
 
-    // Get the class details to get student names
-    const classDetails = await ClassDetails.findOne({
+    // Get marks data for the subject
+    const marksData = await StudentMarks.find({
       course,
       semester,
-      session
-    }).populate('students.uid')
+      session,
+      'subjects.subjectName': subjectName
+    })
+    .populate('student', 'name rollNo')
+    .lean()
+    .exec();
 
-    if (!classDetails) {
+    if (!marksData || marksData.length === 0) {
       return NextResponse.json(
-        { error: 'Class details not found' },
+        { error: 'No marks data found' },
         { status: 404 }
       )
     }
 
-    // Find all student marks for the given criteria
-    const studentMarks = await StudentMarks.find(query)
-      .populate('course', 'name')
-      .select('student subjects')
+    // Process the marks data
+    const processedData = marksData.map(record => {
+      const subjectMarks = record.subjects.find(s => s.subjectName === subjectName)
+      if (!subjectMarks) return null
 
-    if (!studentMarks || studentMarks.length === 0) {
-      return NextResponse.json(
-        { error: 'No marks found for the given criteria' },
-        { status: 404 }
-      )
-    }
+      return {
+        studentName: record.student.name,
+        rollNo: record.student.rollNo,
+        internalMarks: subjectMarks.internal_obtainedMarks,
+        externalMarks: subjectMarks.external_obtainedMarks,
+        totalMarks: calculateTotalMarks(subjectMarks),
+        maxMarks: subjectMarks.internal_maxMarks + subjectMarks.external_maxMarks,
+        result: calculateResult(subjectMarks)
+      }
+    }).filter(Boolean)
 
-    // Create a map of student IDs from class details for quick lookup
-    const classStudentsMap = new Map(
-      classDetails.students.map(student => [student.uid.toString(), student])
-    )
+    // Calculate statistics
+    const statistics = calculateStatistics(processedData, subjectDetails)
 
-    // Extract subject-specific marks for each student
-    const subjectMarks = studentMarks
-      .filter(studentMark => {
-        // Only include students who are in the class
-        return classStudentsMap.has(studentMark.student.toString())
-      })
-      .map(studentMark => {
-        const subject = studentMark.subjects.find(sub => sub.subjectName === subjectName)
-        const studentDetails = classStudentsMap.get(studentMark.student.toString())
-        
-        if (!subject || !studentDetails) return null
+    return NextResponse.json({
+      data: processedData,
+      statistics: statistics,
+      subjectDetails: {
+        name: subjectDetails.name,
+        internalMax: subjectDetails.internal_maxMarks,
+        externalMax: subjectDetails.external_maxMarks,
+        internalMin: subjectDetails.internal_minMarks,
+        externalMin: subjectDetails.external_minMarks
+      }
+    })
 
-        return {
-          student: studentDetails.name,
-          enrollmentNo: studentDetails.enrollmentNo,
-          isWithheld: subject.isWithheld,
-          marks: {
-            internal_obtainedMarks: subject.internal_obtainedMarks,
-            external_obtainedMarks: subject.external_obtainedMarks,
-            total: subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
-              ? 'AB'
-              : subject.internal_obtainedMarks + subject.external_obtainedMarks,
-            internal_maxMarks: subjectData.internal_maxMarks,
-            external_maxMarks: subjectData.external_maxMarks,
-            internal_minMarks: subjectData.internal_minMarks,
-            external_minMarks: subjectData.external_minMarks,
-            status: getSubjectStatus(subject)
-          }
-        }
-      })
-      .filter(mark => mark !== null)
-
-    // Sort students by total marks in descending order
-    subjectMarks.sort((a, b) => b.marks.total - a.marks.total)
-
-    // Calculate class statistics
-    const totalStudents = subjectMarks.length;
-    const withheldResults = subjectMarks.filter(mark => mark.isWithheld).length;
-    const absentStudents = subjectMarks.filter(mark => 
-      !mark.isWithheld && (
-        mark.marks.internal_obtainedMarks === 'A' || 
-        mark.marks.external_obtainedMarks === 'A'
-      )
-    ).length;
-    
-    const passedStudents = subjectMarks.filter(mark => 
-      !mark.isWithheld && 
-      mark.marks.internal_obtainedMarks !== 'A' && 
-      mark.marks.external_obtainedMarks !== 'A' &&
-      mark.marks.internal_obtainedMarks >= subjectData.internal_minMarks &&
-      mark.marks.external_obtainedMarks >= subjectData.external_minMarks
-    ).length;
-
-    const totalMarks = subjectMarks.reduce((sum, mark) => {
-      if (mark.isWithheld || mark.marks.total === 'AB') return sum;
-      return sum + (mark.marks.total === 'AB' ? 0 : mark.marks.total);
-    }, 0);
-
-    const averageMarks = totalStudents > (withheldResults + absentStudents) 
-      ? totalMarks / (totalStudents - withheldResults - absentStudents) 
-      : 0;
-
-    const response = {
-      courseInfo: {
-        course: studentMarks[0].course,
-        semester,
-        session,
-        subjectName
-      },
-      subjectInfo: {
-        internal_maxMarks: subjectData.internal_maxMarks,
-        external_maxMarks: subjectData.external_maxMarks,
-        internal_minMarks: subjectData.internal_minMarks,
-        external_minMarks: subjectData.external_minMarks
-      },
-      statistics: {
-        totalStudents,
-        passedStudents,
-        failedStudents: totalStudents - passedStudents - withheldResults - absentStudents,
-        absentStudents,
-        withheldResults,
-        passPercentage: ((passedStudents / (totalStudents - withheldResults)) * 100) || 0,
-        averageMarks: Math.round(averageMarks * 100) / 100
-      },
-      students: subjectMarks
-    }
-
-    return NextResponse.json(response)
   } catch (error) {
     console.error('Error in subject marks API:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error.message },
       { status: 500 }
     )
   }
 }
 
-function getSubjectStatus(subject) {
-  // If either mark is 'A', student is absent
-  if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
-    return 'ABSENT';
-  }
+function calculateTotalMarks(marks) {
+  const internal = marks.internal_obtainedMarks === 'A' ? 0 : Number(marks.internal_obtainedMarks)
+  const external = marks.external_obtainedMarks === 'A' ? 0 : Number(marks.external_obtainedMarks)
+  return internal + external
+}
 
-  // Check if student has failed
-  const internal = Number(subject.internal_obtainedMarks);
-  const external = Number(subject.external_obtainedMarks);
+function calculateResult(marks) {
+  const internal = marks.internal_obtainedMarks === 'A' ? 0 : Number(marks.internal_obtainedMarks)
+  const external = marks.external_obtainedMarks === 'A' ? 0 : Number(marks.external_obtainedMarks)
   
-  if (internal < subject.internal_minMarks || external < subject.external_minMarks) {
-    return 'FAIL';
+  if (marks.internal_obtainedMarks === 'A' || marks.external_obtainedMarks === 'A') {
+    return 'Absent'
   }
+  
+  if (internal < marks.internal_minMarks || external < marks.external_minMarks) {
+    return 'Fail'
+  }
+  
+  return 'Pass'
+}
 
-  return 'PASS';
+function calculateStatistics(data, subjectDetails) {
+  const totalStudents = data.length
+  if (totalStudents === 0) return null
+
+  const totalMarks = data.reduce((sum, student) => sum + student.totalMarks, 0)
+  const avgMarks = totalMarks / totalStudents
+
+  const passCount = data.filter(student => student.result === 'Pass').length
+  const failCount = data.filter(student => student.result === 'Fail').length
+  const absentCount = data.filter(student => student.result === 'Absent').length
+
+  const maxMarks = Math.max(...data.map(student => student.totalMarks))
+  const minMarks = Math.min(...data.map(student => student.totalMarks))
+
+  return {
+    totalStudents,
+    avgMarks: avgMarks.toFixed(2),
+    passCount,
+    failCount,
+    absentCount,
+    passPercentage: ((passCount / totalStudents) * 100).toFixed(2),
+    maxMarks,
+    minMarks
+  }
 }

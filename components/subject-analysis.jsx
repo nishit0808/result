@@ -199,78 +199,91 @@ export function SubjectAnalysisComponent() {
       : <ChevronDown className="ml-2 h-4 w-4" />;
   };
 
-  const classAverage = React.useMemo(() => {
-    return subjectData?.statistics?.classAverage || 0
-  }, [subjectData])
+  // Process subject data for display
+  const processSubjectData = React.useMemo(() => {
+    if (!subjectData) return {
+      classAverage: 0,
+      passPercentage: 0,
+      passFailCounts: { pass: 0, fail: 0, absent: 0 },
+      topPerformers: []
+    };
 
-  const passFailCounts = React.useMemo(() => {
-    if (!subjectData) return { pass: 0, fail: 0 }
+    const { data, statistics } = subjectData;
+    
     return {
-      pass: subjectData.statistics.passedStudents,
-      fail: subjectData.statistics.failedStudents
-    }
-  }, [subjectData])
+      classAverage: Number(statistics.avgMarks) || 0,
+      passPercentage: Number(statistics.passPercentage) || 0,
+      passFailCounts: {
+        pass: statistics.passCount || 0,
+        fail: statistics.failCount || 0,
+        absent: statistics.absentCount || 0
+      },
+      topPerformers: data
+        .filter(student => student.result === 'Pass')
+        .sort((a, b) => b.totalMarks - a.totalMarks)
+        .slice(0, 3)
+        .map(student => ({
+          name: student.studentName,
+          rollNo: student.rollNo,
+          marks: student.totalMarks
+        }))
+    };
+  }, [subjectData]);
 
-  const passPercentage = React.useMemo(() => {
-    return subjectData?.statistics?.passPercentage || 0
-  }, [subjectData])
-
-  const topPerformers = React.useMemo(() => {
-    if (!subjectData?.students) return []
-    return [...subjectData.students]
-      .sort((a, b) => b.marks.total - a.marks.total)
-      .slice(0, 3)
-  }, [subjectData])
+  const { classAverage, passPercentage, passFailCounts, topPerformers } = processSubjectData;
 
   const marksDistribution = React.useMemo(() => {
-    if (!subjectData?.students) return []
-    const distribution = [
-      { range: '0-20', count: 0 },
-      { range: '21-40', count: 0 },
-      { range: '41-60', count: 0 },
-      { range: '61-80', count: 0 },
-      { range: '81-100', count: 0 },
-    ]
-    subjectData.students.forEach(student => {
-      const total = student.marks.total
-      if (total <= 20) distribution[0].count++
-      else if (total <= 40) distribution[1].count++
-      else if (total <= 60) distribution[2].count++
-      else if (total <= 80) distribution[3].count++
-      else distribution[4].count++
-    })
-    return distribution
-  }, [subjectData])
+    if (!subjectData?.data) return [];
+    
+    const ranges = [
+      { min: 0, max: 20, label: '0-20' },
+      { min: 21, max: 40, label: '21-40' },
+      { min: 41, max: 60, label: '41-60' },
+      { min: 61, max: 80, label: '61-80' },
+      { min: 81, max: 100, label: '81-100' }
+    ];
+
+    const distribution = ranges.map(range => ({
+      range: range.label,
+      count: subjectData.data.filter(student => 
+        student.totalMarks >= range.min && 
+        student.totalMarks <= range.max
+      ).length
+    }));
+
+    return distribution;
+  }, [subjectData]);
 
   const gradeDistribution = React.useMemo(() => {
-    if (!subjectData?.students) return []
-    const distribution = [
-      { grade: 'A', count: 0 },
-      { grade: 'B', count: 0 },
-      { grade: 'C', count: 0 },
-      { grade: 'D', count: 0 },
-      { grade: 'F', count: 0 },
-    ]
-    subjectData.students.forEach(student => {
-      const total = student.marks.total
-      if (total >= 90) distribution[0].count++
-      else if (total >= 80) distribution[1].count++
-      else if (total >= 70) distribution[2].count++
-      else if (total >= 60) distribution[3].count++
-      else distribution[4].count++
-    })
-    return distribution
-  }, [subjectData])
+    if (!subjectData?.data) return [];
+    
+    const grades = [
+      { min: 90, max: 100, label: 'A' },
+      { min: 80, max: 89, label: 'B' },
+      { min: 70, max: 79, label: 'C' },
+      { min: 60, max: 69, label: 'D' },
+      { min: 0, max: 59, label: 'F' }
+    ];
+
+    const distribution = grades.map(grade => ({
+      grade: grade.label,
+      count: subjectData.data.filter(student => 
+        student.totalMarks >= grade.min && 
+        student.totalMarks <= grade.max
+      ).length
+    }));
+
+    return distribution;
+  }, [subjectData]);
 
   const handleExportToExcel = () => {
-    if (!subjectData?.students) return
+    if (!subjectData?.data) return
 
     // Prepare data for export
-    const exportData = subjectData.students.map(student => ({
-      'Student Name': student.student,
-      'CIA Score': `${student.marks.internal_obtainedMarks}/${student.marks.internal_maxMarks}`,
-      'ESE Score': `${student.marks.external_obtainedMarks}/${student.marks.external_maxMarks}`,
-      'Total Score': `${student.marks.total}/${student.marks.internal_maxMarks + student.marks.external_maxMarks}`
+    const exportData = subjectData.data.map(student => ({
+      'Student Name': student.studentName,
+      'Roll No': student.rollNo,
+      'Total Marks': student.totalMarks
     }))
 
     // Create workbook and worksheet
@@ -409,8 +422,8 @@ export function SubjectAnalysisComponent() {
                   <CardTitle className="text-sm font-medium">Pass Percentage</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{passPercentage.toFixed(2)}%</div>
-                  <Progress value={passPercentage} className="mt-2" />
+                  <div className="text-2xl font-bold">{passPercentage ? passPercentage.toFixed(2) : '0.00'}%</div>
+                  <Progress value={passPercentage || 0} className="mt-2" />
                 </CardContent>
               </Card>
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
@@ -427,6 +440,10 @@ export function SubjectAnalysisComponent() {
                       <div className="text-2xl font-bold text-red-600">{passFailCounts.fail}</div>
                       <p className="text-xs text-muted-foreground">Failed</p>
                     </div>
+                    <div>
+                      <div className="text-2xl font-bold text-yellow-600">{passFailCounts.absent}</div>
+                      <p className="text-xs text-muted-foreground">Absent</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -438,9 +455,9 @@ export function SubjectAnalysisComponent() {
                   <ul className="space-y-2">
                     {topPerformers.map((student, index) => (
                       <li key={index} className="flex justify-between items-center">
-                        <span>Student {index + 1}</span>
+                        <span className="text-sm">{student.name}</span>
                         <Badge variant={index === 0 ? "default" : index === 1 ? "secondary" : "outline"}>
-                          {student.marks.total}
+                          {student.marks}
                         </Badge>
                       </li>
                     ))}
@@ -500,17 +517,17 @@ export function SubjectAnalysisComponent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortData(subjectData?.students, sortConfig.key, sortConfig.direction)?.map((student) => (
-                      <TableRow key={student.enrollmentNo}>
-                        <TableCell>{student.student}</TableCell>
+                    {sortData(subjectData?.data, sortConfig.key, sortConfig.direction)?.map((student) => (
+                      <TableRow key={student.rollNo}>
+                        <TableCell>{student.studentName}</TableCell>
                         <TableCell className="text-center">
-                          {student.marks.internal_obtainedMarks} / {student.marks.internal_maxMarks}
+                          {student.internalMarks} / {student.internalMaxMarks}
                         </TableCell>
                         <TableCell className="text-center">
-                          {student.marks.external_obtainedMarks} / {student.marks.external_maxMarks}
+                          {student.externalMarks} / {student.externalMaxMarks}
                         </TableCell>
                         <TableCell className="text-center">
-                          {student.marks.total} / {student.marks.internal_maxMarks + student.marks.external_maxMarks}
+                          {student.totalMarks} / {student.internalMaxMarks + student.externalMaxMarks}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -520,7 +537,7 @@ export function SubjectAnalysisComponent() {
                   <Button 
                     onClick={handleExportToExcel}
                     className="bg-green-600 hover:bg-green-700 text-white"
-                    disabled={!subjectData?.students}
+                    disabled={!subjectData?.data}
                   >
                     <Download className="mr-2 h-4 w-4" />
                     Export to Excel
@@ -574,7 +591,7 @@ export function SubjectAnalysisComponent() {
               <Button
                 onClick={handleChartsDownload}
                 className="bg-green-600 hover:bg-green-700 text-white"
-                disabled={!subjectData?.students}
+                disabled={!subjectData?.data}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Download Charts
