@@ -205,10 +205,11 @@ export function SubjectAnalysisComponent() {
       classAverage: 0,
       passPercentage: 0,
       passFailCounts: { pass: 0, fail: 0, absent: 0 },
-      topPerformers: []
+      topPerformers: [],
+      maxMarks: { internal: 0, external: 0 }
     };
 
-    const { data, statistics } = subjectData;
+    const { data, statistics, subjectDetails } = subjectData;
     
     return {
       classAverage: Number(statistics.avgMarks) || 0,
@@ -217,6 +218,10 @@ export function SubjectAnalysisComponent() {
         pass: statistics.passCount || 0,
         fail: statistics.failCount || 0,
         absent: statistics.absentCount || 0
+      },
+      maxMarks: {
+        internal: subjectDetails.internalMax || 0,
+        external: subjectDetails.externalMax || 0
       },
       topPerformers: data
         .filter(student => student.result === 'Pass')
@@ -230,7 +235,7 @@ export function SubjectAnalysisComponent() {
     };
   }, [subjectData]);
 
-  const { classAverage, passPercentage, passFailCounts, topPerformers } = processSubjectData;
+  const { classAverage, passPercentage, passFailCounts, topPerformers, maxMarks } = processSubjectData;
 
   const marksDistribution = React.useMemo(() => {
     if (!subjectData?.data) return [];
@@ -490,7 +495,7 @@ export function SubjectAnalysisComponent() {
                           onClick={() => handleSort('internal')}
                           className="hover:bg-transparent"
                         >
-                          Continuous Internal Assessment (CIA)
+                          CIA ({maxMarks.internal})
                           {getSortIcon('internal')}
                         </Button>
                       </TableHead>
@@ -500,7 +505,7 @@ export function SubjectAnalysisComponent() {
                           onClick={() => handleSort('external')}
                           className="hover:bg-transparent"
                         >
-                          End Semester Examination (ESE)
+                          ESE ({maxMarks.external})
                           {getSortIcon('external')}
                         </Button>
                       </TableHead>
@@ -510,7 +515,7 @@ export function SubjectAnalysisComponent() {
                           onClick={() => handleSort('total')}
                           className="hover:bg-transparent"
                         >
-                          Total
+                          Total ({maxMarks.internal + maxMarks.external})
                           {getSortIcon('total')}
                         </Button>
                       </TableHead>
@@ -521,13 +526,13 @@ export function SubjectAnalysisComponent() {
                       <TableRow key={student.rollNo}>
                         <TableCell>{student.studentName}</TableCell>
                         <TableCell className="text-center">
-                          {student.internalMarks} / {student.internalMaxMarks}
+                          {student.internalMarks} / {maxMarks.internal}
                         </TableCell>
                         <TableCell className="text-center">
-                          {student.externalMarks} / {student.externalMaxMarks}
+                          {student.externalMarks} / {maxMarks.external}
                         </TableCell>
                         <TableCell className="text-center">
-                          {student.totalMarks} / {student.internalMaxMarks + student.externalMaxMarks}
+                          {student.totalMarks} / {maxMarks.internal + maxMarks.external}
                         </TableCell>
                       </TableRow>
                     ))}
