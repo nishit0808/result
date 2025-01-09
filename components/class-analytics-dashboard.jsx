@@ -25,10 +25,11 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 const COLORS = {
-  pass: '#22c55e',  // Green
-  fail: '#ef4444',  // Red
-  absent: '#f59e0b', // Amber
-  withheld: '#6b7280' // Gray
+  pass: '#22c55e',     // Green
+  supply: '#f97316',   // Orange
+  fail: '#ef4444',     // Red
+  absent: '#a855f7',   // Purple
+  withheld: '#eab308'  // Yellow
 };
 
 export function ClassAnalyticsDashboardComponent() {
@@ -473,7 +474,7 @@ export function ClassAnalyticsDashboardComponent() {
         return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
       }, 0);
 
-      const percentage = (totalMarks / totalMaxMarks) * 100;
+      const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100);
 
       worksheet.addRow([
         result.name,
@@ -577,47 +578,32 @@ export function ClassAnalyticsDashboardComponent() {
 
         {selectedClass && selectedSemester && selectedSession ? (
           <>
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+            <div className="grid gap-4 md:grid-cols-3 mb-6">
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Class Average
-                  </CardTitle>
-                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-lg font-medium">Class Average</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{analytics.classAverage}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    Overall class performance
-                  </p>
+                  <div className="text-3xl font-bold">{formatPercentage(analytics.classAverage)}%</div>
+                  <p className="text-base text-muted-foreground">Overall class performance</p>
                 </CardContent>
               </Card>
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Top Score
-                  </CardTitle>
-                  <Trophy className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-lg font-medium">Top Score</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{analytics.topScore}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    Highest percentage achieved
-                  </p>
+                  <div className="text-3xl font-bold">{formatPercentage(analytics.topScore)}%</div>
+                  <p className="text-base text-muted-foreground">Highest percentage achieved</p>
                 </CardContent>
               </Card>
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Pass Percentage
-                  </CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-lg font-medium">Pass Percentage</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{analytics.passPercentage}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    Students passed
-                  </p>
+                  <div className="text-3xl font-bold">{formatPercentage(analytics.passPercentage)}%</div>
+                  <p className="text-base text-muted-foreground">Students passed</p>
                 </CardContent>
               </Card>
             </div>
@@ -638,10 +624,10 @@ export function ClassAnalyticsDashboardComponent() {
                         <Pie
                           data={[
                             { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
-                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
+                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.supply },
                             { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
-                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent },
-                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld }
+                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld },
+                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent }
                           ].filter(item => item.value > 0)}
                           cx="50%"
                           cy="50%"
@@ -653,12 +639,13 @@ export function ClassAnalyticsDashboardComponent() {
                         >
                           {[
                             { name: 'Pass', value: analytics.distribution.pass, color: COLORS.pass },
-                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.fail },
+                            { name: 'Supply', value: analytics.distribution.supply, color: COLORS.supply },
                             { name: 'Fail', value: analytics.distribution.fail, color: COLORS.fail },
-                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent },
-                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld }
-                          ].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
+                            { name: 'Withheld', value: analytics.distribution.withheld, color: COLORS.withheld },
+                            { name: 'Absent', value: analytics.distribution.absent, color: COLORS.absent }
+                          ].filter(item => item.value > 0)
+                            .map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
                         <Legend 
@@ -666,14 +653,14 @@ export function ClassAnalyticsDashboardComponent() {
                           verticalAlign="bottom" 
                           align="center"
                           formatter={(value, entry, index) => {
-                            const item = [
+                            const items = [
                               { name: 'Pass', value: analytics.distribution.pass },
                               { name: 'Supply', value: analytics.distribution.supply },
                               { name: 'Fail', value: analytics.distribution.fail },
-                              { name: 'Absent', value: analytics.distribution.absent },
-                              { name: 'Withheld', value: analytics.distribution.withheld }
-                            ][index];
-                            return `${item.name}: ${item.value}`;
+                              { name: 'Withheld', value: analytics.distribution.withheld },
+                              { name: 'Absent', value: analytics.distribution.absent }
+                            ];
+                            return `${items[index].name}: ${items[index].value}`;
                           }}
                         />
                         <Tooltip />
@@ -695,33 +682,66 @@ export function ClassAnalyticsDashboardComponent() {
                   <div className="h-[450px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart 
-                        data={Object.keys(analytics.subjectPerformance).map(key => ({ name: key, average: analytics.subjectPerformance[key] }))}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 140 }}
+                        data={Object.keys(analytics.subjectPerformance).map(key => ({ 
+                          name: key,
+                          displayName: key.split(' ').reduce((acc, word, i, arr) => {
+                            if (i === 0) return word;
+                            if (i % 2 === 0 || word.includes('+')) return acc + '\n' + word;
+                            return acc + ' ' + word;
+                          }, ''),
+                          average: analytics.subjectPerformance[key] 
+                        }))}
+                        margin={{ top: 20, right: 30, left: 60, bottom: 100 }}
                       >
                         <XAxis 
-                          dataKey="name" 
-                          angle={-45}
-                          textAnchor="end"
-                          height={120}
+                          dataKey="displayName" 
+                          angle={0}
+                          textAnchor="middle"
+                          height={100}
                           interval={0}
-                          tick={{ fontSize: 12 }}
+                          tick={{ 
+                            fontSize: 16,
+                            width: 100,
+                            lineHeight: 20
+                          }}
+                          label={{ 
+                            value: 'Subjects', 
+                            position: 'bottom',
+                            offset: 40,
+                            style: { 
+                              fontSize: '18px',
+                              fontWeight: 500,
+                              textAnchor: 'middle'
+                            }
+                          }}
                         />
                         <YAxis 
+                          tick={{ fontSize: 16 }}
+                          ticks={[0, 20, 40, 60, 80, 100]} 
+                          domain={[0, 100]} 
                           label={{ 
                             value: 'Average Score (%)', 
                             angle: -90, 
                             position: 'insideLeft',
-                            style: { textAnchor: 'middle' }
+                            offset: -45,
+                            style: { 
+                              fontSize: '18px',
+                              fontWeight: 500,
+                              textAnchor: 'middle'
+                            }
                           }}
                         />
-                        <Tooltip />
+                        <Tooltip 
+                          contentStyle={{ fontSize: '16px' }}
+                          formatter={(value, name, props) => [value.toFixed(1) + '%', props.payload.name]}
+                        />
                         <Bar 
                           dataKey="average" 
                           fill="#3b82f6"
                           label={{
                             position: 'top',
                             formatter: (value) => `${value.toFixed(1)}%`,
-                            style: { fontSize: '12px' }
+                            style: { fontSize: '16px' }
                           }}
                         >
                           {Object.keys(analytics.subjectPerformance).map((entry, index) => (
@@ -749,8 +769,7 @@ export function ClassAnalyticsDashboardComponent() {
 
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="text-lg font-medium">Student Results Overview</CardTitle>
-                <CardDescription>Overview of student performance and divisions</CardDescription>
+                <CardTitle className="text-xl">Student Results Overview</CardTitle>
               </CardHeader>
               <CardContent className="px-6">
                 {loading ? (
@@ -795,15 +814,15 @@ export function ClassAnalyticsDashboardComponent() {
                                 key={index}
                                 className="border-b border-gray-100 hover:bg-gray-50/50"
                               >
-                                <td className="p-4 pl-8 font-medium">{result.name}</td>
-                                <td className="p-4 text-right">{totalMarks}</td>
-                                <td className="p-4 text-right">{percentage}%</td>
+                                <td className="p-4 pl-8 text-base font-medium">{result.name}</td>
+                                <td className="p-4 text-base">{totalMarks}</td>
+                                <td className="p-4 text-base">{percentage}%</td>
                                 <td className="p-4 text-center">
                                   <span className={`${badgeColor} text-white px-4 py-1 rounded-full text-sm font-medium`}>
                                     {division}
                                   </span>
                                 </td>
-                                <td className="p-4 pr-8 text-right">{failedSubjects}</td>
+                                <td className="p-4 pr-8 text-base">{failedSubjects}</td>
                               </tr>
                             )
                           })}
