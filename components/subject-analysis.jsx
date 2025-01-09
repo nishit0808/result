@@ -12,6 +12,8 @@ import { ArrowUpDown, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import * as XLSX from 'xlsx'
 import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf';
+import { toast } from "@/components/ui/use-toast";
 
 export function SubjectAnalysisComponent() {
   const [courses, setCourses] = React.useState([])
@@ -142,56 +144,58 @@ export function SubjectAnalysisComponent() {
   }, [selectedCourse, selectedSemester, selectedSession, selectedSubject, allSessions])
 
   // Sorting function
-  const sortData = React.useCallback((data, key, direction) => {
-    if (!data) return data;
-
-    const sortedData = [...data].sort((a, b) => {
-      let aValue, bValue;
-      
-      switch(key) {
-        case 'internal':
-          aValue = a.marks.internal_obtainedMarks;
-          bValue = b.marks.internal_obtainedMarks;
-          break;
-        case 'external':
-          aValue = a.marks.external_obtainedMarks;
-          bValue = b.marks.external_obtainedMarks;
-          break;
-        case 'total':
-          aValue = a.marks.total;
-          bValue = b.marks.total;
-          break;
-        case 'name':
-          aValue = a.student.toLowerCase();
-          bValue = b.student.toLowerCase();
-          break;
-        default:
-          return 0;
-      }
-
-      if (aValue < bValue) return direction === 'asc' ? -1 : 1;
-      if (aValue > bValue) return direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return sortedData;
-  }, []);
-
   const handleSort = (key) => {
-    setSortConfig((prevConfig) => {
-      const newDirection = 
-        prevConfig.key === key && prevConfig.direction === 'asc' 
-          ? 'desc' 
-          : 'asc';
-      return {
-        key,
-        direction: newDirection
-      };
-    });
+    const direction = sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc';
+    setSortConfig({ key, direction });
   };
 
-  const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
+  // Get sorted data
+  const sortedData = React.useMemo(() => {
+    if (!subjectData?.data) return [];
+    
+    const sorted = [...subjectData.data];
+    if (sortConfig.key) {
+      sorted.sort((a, b) => {
+        let aValue, bValue;
+        
+        switch (sortConfig.key) {
+          case 'name':
+            aValue = a.studentName;
+            bValue = b.studentName;
+            break;
+          case 'internal':
+            aValue = a.internalMarks === 'A' ? -1 : Number(a.internalMarks);
+            bValue = b.internalMarks === 'A' ? -1 : Number(b.internalMarks);
+            break;
+          case 'external':
+            aValue = a.externalMarks === 'A' ? -1 : Number(a.externalMarks);
+            bValue = b.externalMarks === 'A' ? -1 : Number(b.externalMarks);
+            break;
+          case 'total':
+            aValue = a.totalMarks === 'AB' ? -1 : Number(a.totalMarks);
+            bValue = b.totalMarks === 'AB' ? -1 : Number(b.totalMarks);
+            break;
+          default:
+            return 0;
+        }
+
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortConfig.direction === 'asc' 
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+
+        return sortConfig.direction === 'asc' 
+          ? aValue - bValue
+          : bValue - aValue;
+      });
+    }
+    return sorted;
+  }, [subjectData?.data, sortConfig]);
+
+  // Get sort icon
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) {
       return <ArrowUpDown className="ml-2 h-4 w-4" />;
     }
     return sortConfig.direction === 'asc' 
@@ -205,7 +209,6 @@ export function SubjectAnalysisComponent() {
       classAverage: 0,
       passPercentage: 0,
       passFailCounts: { pass: 0, fail: 0, absent: 0 },
-      topPerformers: [],
       maxMarks: { internal: 0, external: 0 }
     };
 
@@ -222,20 +225,11 @@ export function SubjectAnalysisComponent() {
       maxMarks: {
         internal: subjectDetails.internalMax || 0,
         external: subjectDetails.externalMax || 0
-      },
-      topPerformers: data
-        .filter(student => student.result === 'Pass')
-        .sort((a, b) => b.totalMarks - a.totalMarks)
-        .slice(0, 3)
-        .map(student => ({
-          name: student.studentName,
-          rollNo: student.rollNo,
-          marks: student.totalMarks
-        }))
+      }
     };
   }, [subjectData]);
 
-  const { classAverage, passPercentage, passFailCounts, topPerformers, maxMarks } = processSubjectData;
+  const { classAverage, passPercentage, passFailCounts, maxMarks } = processSubjectData;
 
   const marksDistribution = React.useMemo(() => {
     if (!subjectData?.data) return [];
@@ -248,38 +242,42 @@ export function SubjectAnalysisComponent() {
       { min: 81, max: 100, label: '81-100' }
     ];
 
-    const distribution = ranges.map(range => ({
+    return ranges.map(range => ({
       range: range.label,
-      count: subjectData.data.filter(student => 
-        student.totalMarks >= range.min && 
-        student.totalMarks <= range.max
-      ).length
+      count: subjectData.data.filter(student => {
+        if (student.totalMarks === 'AB' || typeof student.totalMarks !== 'number') return false;
+        return student.totalMarks >= range.min && student.totalMarks <= range.max;
+      }).length
     }));
-
-    return distribution;
   }, [subjectData]);
 
-  const gradeDistribution = React.useMemo(() => {
+  // Calculate top performers
+  const topPerformers = React.useMemo(() => {
     if (!subjectData?.data) return [];
     
-    const grades = [
-      { min: 90, max: 100, label: 'A' },
-      { min: 80, max: 89, label: 'B' },
-      { min: 70, max: 79, label: 'C' },
-      { min: 60, max: 69, label: 'D' },
-      { min: 0, max: 59, label: 'F' }
-    ];
-
-    const distribution = grades.map(grade => ({
-      grade: grade.label,
-      count: subjectData.data.filter(student => 
-        student.totalMarks >= grade.min && 
-        student.totalMarks <= grade.max
-      ).length
-    }));
-
-    return distribution;
-  }, [subjectData]);
+    return subjectData.data
+      .filter(student => 
+        student.totalMarks !== 'AB' && 
+        student.internalMarks !== 'A' && 
+        student.externalMarks !== 'A'
+      )
+      .sort((a, b) => {
+        const totalA = Number(a.totalMarks);
+        const totalB = Number(b.totalMarks);
+        if (totalB !== totalA) return totalB - totalA;
+        // If total marks are equal, sort by internal marks
+        return Number(b.internalMarks) - Number(a.internalMarks);
+      })
+      .slice(0, 5)
+      .map((student, index) => ({
+        name: student.studentName,
+        rollNo: student.rollNo,
+        total: student.totalMarks,
+        internal: student.internalMarks,
+        external: student.externalMarks,
+        rank: index + 1
+      }));
+  }, [subjectData?.data]);
 
   const handleExportToExcel = () => {
     if (!subjectData?.data) return
@@ -307,51 +305,109 @@ export function SubjectAnalysisComponent() {
 
   const handleChartsDownload = async () => {
     try {
-      const selectedCourseData = courses.find(course => course._id === selectedCourse)
-      const selectedSubjectData = subjects.find(subject => subject.value === selectedSubject)
-      const baseFileName = `${selectedCourseData?.name || 'Course'}_${selectedSemester || 'Sem'}_${selectedSubjectData?.label || 'Subject'}`
+      const selectedCourseData = courses.find(course => course._id === selectedCourse);
+      const selectedSubjectData = subjects.find(subject => subject.value === selectedSubject);
+      const fileName = `${selectedCourseData?.name || 'Course'}_${selectedSemester || 'Sem'}_${selectedSubjectData?.label || 'Subject'}_Analysis.pdf`;
 
-      // Download Marks Distribution Chart
-      const marksChart = document.getElementById('marksDistributionChart')
+      // Initialize PDF with larger dimensions
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Get page dimensions in mm
+      const pageWidth = pdf.internal.pageSize.width;
+      const pageHeight = pdf.internal.pageSize.height;
+      const margin = 20;
+
+      // Add title
+      pdf.setFontSize(18);
+      pdf.text('Subject Analysis Report', pageWidth / 2, margin, { align: 'center' });
+      
+      // Add header information
+      pdf.setFontSize(12);
+      pdf.text([
+        `Class: ${selectedCourseData?.name || '-'} ${selectedSemester || '-'}`,
+        `Subject: ${selectedSubjectData?.label || '-'}`,
+        `Session: ${selectedSession || '-'}`
+      ], margin, margin + 15);
+
+      // Add statistics
+      pdf.text('Statistics:', margin, margin + 40);
+      pdf.text([
+        `Class Average: ${classAverage.toFixed(2)}`,
+        `Pass Percentage: ${passPercentage.toFixed(2)}%`,
+        `Passed: ${passFailCounts.pass}  Failed: ${passFailCounts.fail}  Absent: ${passFailCounts.absent}`
+      ], margin + 5, margin + 50);
+
+      // Add Marks Distribution Chart
+      const marksChart = document.getElementById('marksDistributionChart');
       if (marksChart) {
-        const marksCanvas = await html2canvas(marksChart)
-        const marksUrl = marksCanvas.toDataURL('image/png')
-        const marksLink = document.createElement('a')
-        marksLink.download = `${baseFileName}_MarksDistribution.png`
-        marksLink.href = marksUrl
-        document.body.appendChild(marksLink)
-        marksLink.click()
-        document.body.removeChild(marksLink)
+        try {
+          const canvas = await html2canvas(marksChart, {
+            scale: 2, // Increase quality
+            logging: false,
+            useCORS: true,
+            allowTaint: true
+          });
+          
+          // Convert canvas to image
+          const chartImage = canvas.toDataURL('image/jpeg', 1.0);
+          
+          // Add chart title
+          pdf.text('Marks Distribution:', margin, margin + 80);
+          
+          // Calculate dimensions to maintain aspect ratio
+          const chartWidth = pageWidth - (margin * 2);
+          const chartHeight = (canvas.height * chartWidth) / canvas.width;
+          
+          // Add the chart image
+          pdf.addImage(
+            chartImage,
+            'JPEG',
+            margin,
+            margin + 85,
+            chartWidth,
+            chartHeight,
+            undefined,
+            'FAST'
+          );
+          
+        } catch (chartError) {
+          console.error('Error capturing chart:', chartError);
+          pdf.text('Error: Could not generate chart image', margin, margin + 85);
+        }
       }
 
-      // Small delay between downloads
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Add footer
+      pdf.setFontSize(10);
+      pdf.text(
+        `Generated on: ${new Date().toLocaleDateString()}`,
+        margin,
+        pageHeight - margin
+      );
 
-      // Download Grade Distribution Chart
-      const gradeChart = document.getElementById('gradeDistributionChart')
-      if (gradeChart) {
-        const gradeCanvas = await html2canvas(gradeChart)
-        const gradeUrl = gradeCanvas.toDataURL('image/png')
-        const gradeLink = document.createElement('a')
-        gradeLink.download = `${baseFileName}_GradeDistribution.png`
-        gradeLink.href = gradeUrl
-        document.body.appendChild(gradeLink)
-        gradeLink.click()
-        document.body.removeChild(gradeLink)
-      }
+      // Save PDF
+      pdf.save(fileName);
+
     } catch (error) {
-      console.error('Error downloading charts:', error)
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF report. Please try again.",
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   return (
-    (<div
-      className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
-      <div className="container mx-auto p-4 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
+      <div className="container mx-auto p-6 space-y-6">
+        {/* Subject Selection Card */}
         <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
           <CardContent className="p-6">
-            <h1
-              className="text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-blue-400">
+            <h1 className="text-3xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-blue-400">
               Subject Analysis
             </h1>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -412,7 +468,8 @@ export function SubjectAnalysisComponent() {
 
         {selectedSubject && (
           <>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {/* Stats Cards */}
+            <div className="grid gap-6 md:grid-cols-3">
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Class Average Score</CardTitle>
@@ -422,6 +479,7 @@ export function SubjectAnalysisComponent() {
                   <p className="text-xs text-muted-foreground">Out of 100</p>
                 </CardContent>
               </Card>
+
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Pass Percentage</CardTitle>
@@ -431,6 +489,7 @@ export function SubjectAnalysisComponent() {
                   <Progress value={passPercentage || 0} className="mt-2" />
                 </CardContent>
               </Card>
+
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Pass/Fail Counts</CardTitle>
@@ -452,87 +511,63 @@ export function SubjectAnalysisComponent() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Top Performers</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    {topPerformers.map((student, index) => (
-                      <li key={index} className="flex justify-between items-center">
-                        <span className="text-sm">{student.name}</span>
-                        <Badge variant={index === 0 ? "default" : index === 1 ? "secondary" : "outline"}>
-                          {student.marks}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
             </div>
 
+            {/* Student Performance Analysis Table */}
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle>Student Performance Analysis</CardTitle>
+                <CardTitle className="text-xl">Student Performance Analysis</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>
+                      <TableHead className="w-[200px]">
                         <Button 
                           variant="ghost" 
                           onClick={() => handleSort('name')}
-                          className="hover:bg-transparent"
+                          className="hover:bg-transparent flex items-center"
                         >
-                          Name
-                          {getSortIcon('name')}
+                          Name {getSortIcon('name')}
                         </Button>
                       </TableHead>
                       <TableHead className="text-center">
                         <Button 
                           variant="ghost" 
                           onClick={() => handleSort('internal')}
-                          className="hover:bg-transparent"
+                          className="hover:bg-transparent flex items-center justify-center mx-auto"
                         >
-                          CIA ({maxMarks.internal})
-                          {getSortIcon('internal')}
+                          CIA ({maxMarks.internal}) {getSortIcon('internal')}
                         </Button>
                       </TableHead>
                       <TableHead className="text-center">
                         <Button 
                           variant="ghost" 
                           onClick={() => handleSort('external')}
-                          className="hover:bg-transparent"
+                          className="hover:bg-transparent flex items-center justify-center mx-auto"
                         >
-                          ESE ({maxMarks.external})
-                          {getSortIcon('external')}
+                          ESE ({maxMarks.external}) {getSortIcon('external')}
                         </Button>
                       </TableHead>
                       <TableHead className="text-center">
                         <Button 
                           variant="ghost" 
                           onClick={() => handleSort('total')}
-                          className="hover:bg-transparent"
+                          className="hover:bg-transparent flex items-center justify-center mx-auto"
                         >
-                          Total ({maxMarks.internal + maxMarks.external})
-                          {getSortIcon('total')}
+                          Total ({maxMarks.internal + maxMarks.external}) {getSortIcon('total')}
                         </Button>
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortData(subjectData?.data, sortConfig.key, sortConfig.direction)?.map((student) => (
-                      <TableRow key={student.rollNo}>
-                        <TableCell>{student.studentName}</TableCell>
+                    {sortedData.map((student, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{student.studentName}</TableCell>
+                        <TableCell className="text-center">{student.internalMarks}</TableCell>
+                        <TableCell className="text-center">{student.externalMarks}</TableCell>
                         <TableCell className="text-center">
-                          {student.internalMarks} / {maxMarks.internal}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {student.externalMarks} / {maxMarks.external}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {student.totalMarks} / {maxMarks.internal + maxMarks.external}
+                          {student.totalMarks === 'AB' ? 'AB' : student.totalMarks}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -551,20 +586,61 @@ export function SubjectAnalysisComponent() {
               </CardContent>
             </Card>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            {/* Charts and Top Performers Row */}
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Marks Distribution Chart */}
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle>Marks Distribution</CardTitle>
+                  <CardTitle className="text-xl">Marks Distribution</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div id="marksDistributionChart" className="h-[250px]">
+                <CardContent className="pt-6">
+                  <div id="marksDistributionChart" className="w-full h-[350px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={marksDistribution} margin={{ top: 25, right: 30, left: 20, bottom: 5 }}>
-                        <XAxis dataKey="range" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#3b82f6" barSize={35}>
-                          <LabelList dataKey="count" position="top" offset={10} />
+                      <BarChart 
+                        data={marksDistribution}
+                        margin={{ top: 30, right: 30, left: 30, bottom: 30 }}
+                        barSize={40}
+                      >
+                        <XAxis 
+                          dataKey="range" 
+                          label={{ 
+                            value: 'Marks Range->', 
+                            position: 'bottom',
+                            offset: -5,
+                            fontSize: 18
+                          }}
+                          tick={{ fontSize: 14 }}
+                        />
+                        <YAxis 
+                          label={{ 
+                            value: 'Number of Students->', 
+                            angle: -90, 
+                            position: 'insideCenterRight',
+                            offset: -10,
+                            fontSize: 18
+                          }}
+                          tick={{ fontSize: 14 }}
+                          domain={[0, 'auto']}
+                          allowDecimals={false}
+                        />
+                        <Tooltip 
+                          formatter={(value) => [`${value} students`, 'Count']}
+                          labelFormatter={(label) => `Range: ${label}`}
+                          cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
+                          contentStyle={{ fontSize: '14px' }}
+                        />
+                        <Bar 
+                          dataKey="count" 
+                          fill="#3b82f6"
+                          radius={[4, 4, 0, 0]}
+                        >
+                          <LabelList 
+                            dataKey="count" 
+                            position="top" 
+                            formatter={(value) => value > 0 ? value : ''}
+                            style={{ fontSize: '14px', fill: '#666' }}
+                            offset={10}
+                          />
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -572,22 +648,45 @@ export function SubjectAnalysisComponent() {
                 </CardContent>
               </Card>
 
+              {/* Top Performers Card */}
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle>Grade Distribution</CardTitle>
+                  <CardTitle className="text-xl">Top Performers</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div id="gradeDistributionChart" className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={gradeDistribution} margin={{ top: 25, right: 30, left: 20, bottom: 5 }}>
-                        <XAxis dataKey="grade" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#10b981" barSize={35}>
-                          <LabelList dataKey="count" position="top" offset={10} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="space-y-4">
+                    {topPerformers.map((student) => (
+                      <div 
+                        key={student.rollNo} 
+                        className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Badge 
+                            className={
+                              student.rank === 1 
+                                ? "bg-yellow-500 hover:bg-yellow-600" 
+                                : student.rank === 2 
+                                ? "bg-gray-400 hover:bg-gray-500" 
+                                : student.rank === 3 
+                                ? "bg-amber-600 hover:bg-amber-700"
+                                : "bg-blue-500 hover:bg-blue-600"
+                            }
+                          >
+                            #{student.rank}
+                          </Badge>
+                          <div>
+                            <p className="font-medium">{student.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              CIA: {student.internal} | ESE: {student.external}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold">{student.total}</p>
+                          <p className="text-sm text-muted-foreground">Total Marks</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -595,16 +694,17 @@ export function SubjectAnalysisComponent() {
             <div className="mt-4 flex justify-end">
               <Button
                 onClick={handleChartsDownload}
-                className="bg-green-600 hover:bg-green-700 text-white"
-                disabled={!subjectData?.data}
+                variant="secondary"
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
+                disabled={!selectedSubject || !subjectData?.data}
               >
-                <Download className="mr-2 h-4 w-4" />
-                Download Charts
+                <Download className="h-4 w-4" />
+                Download PDF Report
               </Button>
             </div>
           </>
         )}
       </div>
-    </div>)
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import { Bar, BarChart, Pie, PieChart, ResponsiveContainer, Cell, Legend, Toolti
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -22,7 +22,8 @@ import {
 import axios from 'axios'
 import ExcelJS from 'exceljs';
 import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf';
+import { toast } from "@/components/ui/use-toast";
 
 const COLORS = {
   pass: '#22c55e',     // Green
@@ -93,6 +94,184 @@ export function ClassAnalyticsDashboardComponent() {
 
     pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
     pdf.save(`performance-charts-${selectedClass}-${selectedSemester}.pdf`);
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      const fileName = `${selectedClass}_${selectedSemester}_Performance_Analysis.pdf`;
+
+      // Initialize PDF
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Get page dimensions in mm
+      const pageWidth = pdf.internal.pageSize.width;
+      const pageHeight = pdf.internal.pageSize.height;
+      const margin = 20;
+
+      // Add title
+      pdf.setFontSize(18);
+      pdf.text('Class Performance Analysis Report', pageWidth / 2, margin, { align: 'center' });
+      
+      // Add header information
+      pdf.setFontSize(12);
+      pdf.text([
+        `Class: ${selectedClass} ${selectedSemester}`,
+        `Session: ${selectedSession}`
+      ], margin, margin + 15);
+
+      // Add statistics
+      pdf.text('Class Statistics:', margin, margin + 40);
+      pdf.text([
+        `Total Students: ${studentResults.length}`,
+        `Average Attendance: ${analytics.classAverage}%`,
+        `Overall Pass Rate: ${analytics.passPercentage}%`
+      ], margin + 5, margin + 50);
+
+      // Add Performance Chart
+      const performanceChart = chartRef.current;
+      if (performanceChart) {
+        try {
+          const canvas = await html2canvas(performanceChart, {
+            scale: 2,
+            logging: false,
+            useCORS: true,
+            allowTaint: true
+          });
+          
+          // Convert canvas to image
+          const chartImage = canvas.toDataURL('image/jpeg', 1.0);
+          
+          // Add chart title
+          pdf.text('Subject-wise Performance:', margin, margin + 80);
+          
+          // Calculate dimensions to maintain aspect ratio
+          const chartWidth = pageWidth - (margin * 2);
+          const chartHeight = (canvas.height * chartWidth) / canvas.width;
+          
+          // Add the chart image
+          pdf.addImage(
+            chartImage,
+            'JPEG',
+            margin,
+            margin + 85,
+            chartWidth,
+            chartHeight,
+            undefined,
+            'FAST'
+          );
+          
+        } catch (chartError) {
+          console.error('Error capturing chart:', chartError);
+          pdf.text('Error: Could not generate chart image', margin, margin + 85);
+        }
+      }
+
+      // Add footer
+      pdf.setFontSize(10);
+      pdf.text(
+        `Generated on: ${new Date().toLocaleDateString()}`,
+        margin,
+        pageHeight - margin
+      );
+
+      // Save PDF
+      pdf.save(fileName);
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF report. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExcelDownload = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Student Results');
+
+    // Add title and metadata
+    worksheet.addRow(['Performance Analysis Report']);
+    worksheet.addRow(['']);  // Empty row for spacing
+    worksheet.addRow([`Class: ${selectedClass} ${selectedSemester}`]);
+    worksheet.addRow([`Session: ${selectedSession}`]);
+    worksheet.addRow([`Generated on: ${new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    })}`]);
+    worksheet.addRow(['']);  // Empty row for spacing
+
+    // Add column headers
+    const headerRow = worksheet.addRow(['Name', 'Total Marks', 'Percentage', 'Division', 'Failed Subjects']);
+    headerRow.font = { bold: true };
+    
+    // Add student data
+    studentResults.forEach(result => {
+      const failedSubjectsCount = result.subjects.reduce((acc, subject) => {
+        const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
+          ? 0
+          : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
+        const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
+        return totalObtained < totalMin ? acc + 1 : acc;
+      }, 0);
+
+      const totalMarks = result.subjects.reduce((acc, subject) => {
+        if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
+          return acc;
+        }
+        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+      }, 0);
+
+      const totalMaxMarks = result.subjects.reduce((acc, subject) => {
+        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
+      }, 0);
+
+      const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100);
+
+      worksheet.addRow([
+        result.name,
+        totalMarks,
+        formatPercentage(percentage),
+        result.result,
+        failedSubjectsCount
+      ]);
+    });
+
+    // Style title and metadata
+    worksheet.getCell('A1').font = { bold: true, size: 14 };
+    worksheet.getCell('A3').font = { bold: true };
+    worksheet.getCell('A4').font = { bold: true };
+    worksheet.getCell('A5').font = { bold: true };
+
+    // Set column widths
+    worksheet.columns = [
+      { width: 30 },  // Name
+      { width: 15 },  // Total Marks
+      { width: 15 },  // Percentage
+      { width: 15 },  // Division
+      { width: 15 }   // Failed Subjects
+    ];
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    // Create blob and download
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `performance-report-${selectedClass}-${selectedSemester}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // Helper function to format percentage
@@ -430,89 +609,6 @@ export function ClassAnalyticsDashboardComponent() {
     })
   }, [studentResults, selectedClass, selectedSemester, selectedSession, courses])
 
-  const generateExcelReport = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Student Results');
-
-    // Add title and metadata
-    worksheet.addRow(['Performance Analysis Report']);
-    worksheet.addRow(['']);  // Empty row for spacing
-    worksheet.addRow([`Class: ${selectedClass} ${selectedSemester}`]);
-    worksheet.addRow([`Session: ${selectedSession}`]);
-    worksheet.addRow([`Generated on: ${new Date().toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true
-    })}`]);
-    worksheet.addRow(['']);  // Empty row for spacing
-
-    // Add column headers
-    const headerRow = worksheet.addRow(['Name', 'Total Marks', 'Percentage', 'Division', 'Failed Subjects']);
-    headerRow.font = { bold: true };
-    
-    // Add student data
-    studentResults.forEach(result => {
-      const failedSubjectsCount = result.subjects.reduce((acc, subject) => {
-        const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
-          ? 0
-          : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
-        const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
-        return totalObtained < totalMin ? acc + 1 : acc;
-      }, 0);
-
-      const totalMarks = result.subjects.reduce((acc, subject) => {
-        if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
-          return acc;
-        }
-        return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
-      }, 0);
-
-      const totalMaxMarks = result.subjects.reduce((acc, subject) => {
-        return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
-      }, 0);
-
-      const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100);
-
-      worksheet.addRow([
-        result.name,
-        totalMarks,
-        formatPercentage(percentage),
-        result.result,
-        failedSubjectsCount
-      ]);
-    });
-
-    // Style title and metadata
-    worksheet.getCell('A1').font = { bold: true, size: 14 };
-    worksheet.getCell('A3').font = { bold: true };
-    worksheet.getCell('A4').font = { bold: true };
-    worksheet.getCell('A5').font = { bold: true };
-
-    // Set column widths
-    worksheet.columns = [
-      { width: 30 },  // Name
-      { width: 15 },  // Total Marks
-      { width: 15 },  // Percentage
-      { width: 15 },  // Division
-      { width: 15 }   // Failed Subjects
-    ];
-
-    // Generate buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    
-    // Create blob and download
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `performance-report-${selectedClass}-${selectedSemester}.xlsx`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
       <div className="container mx-auto p-4 space-y-6">
@@ -757,13 +853,13 @@ export function ClassAnalyticsDashboardComponent() {
 
             <div className="flex justify-end mt-4">
               <Button
-                onClick={downloadChartsPDF}
+                onClick={handleDownloadPDF}
                 variant="secondary"
-                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition-colors"
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
                 disabled={!studentResults.length}
               >
                 <Download className="h-4 w-4" />
-                Download Performance Charts
+                Download PDF Report
               </Button>
             </div>
 
@@ -854,7 +950,7 @@ export function ClassAnalyticsDashboardComponent() {
 
             <div className="mt-6 flex justify-end">
               <Button
-                onClick={generateExcelReport}
+                onClick={handleExcelDownload}
                 variant="secondary"
                 className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 transition-colors"
                 disabled={!studentResults.length}
