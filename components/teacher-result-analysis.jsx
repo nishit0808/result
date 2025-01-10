@@ -6,9 +6,14 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { BookOpen, Users, TrendingUp, PieChart as PieChartIcon, GraduationCap } from "lucide-react"
+import { BookOpen, Users, TrendingUp, PieChart as PieChartIcon, GraduationCap, BarChart3 } from "lucide-react"
 import { Toaster, toast } from 'sonner'
 import { Progress } from "@/components/ui/progress"
+import { cn } from "@/lib/utils"
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import { Button } from "@/components/ui/button"
+import { FileDown } from "lucide-react"
 
 const departments = [
   'Computer Science',
@@ -251,6 +256,111 @@ export function TeacherResultAnalysisComponent() {
     setSelectedSubject(subject.subject)
   }
 
+  const generatePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Pass/Fail Distribution Report', pageWidth / 2, 20, { align: 'center' });
+    
+    // Subject Info
+    doc.setFontSize(12);
+    if (selectedSubject === 'All Subjects') {
+      doc.text(`Teacher: ${selectedTeacher}`, 20, 35);
+      doc.text(`Department: ${selectedDepartment}`, 20, 45);
+      doc.text('Subjects: All Subjects', 20, 55);
+    } else {
+      const subject = teacherSubjects.find(s => s.subject === selectedSubject);
+      doc.text(`Teacher: ${selectedTeacher}`, 20, 35);
+      doc.text(`Department: ${selectedDepartment}`, 20, 45);
+      doc.text(`Subject: ${selectedSubject}`, 20, 55);
+      doc.text(`Class: ${courseNames[subject?.course]} ${subject?.semester}`, 20, 65);
+      doc.text(`Session: ${subject?.session}`, 20, 75);
+    }
+
+    // Statistics
+    doc.setFontSize(14);
+    doc.text('Statistics:', 20, 90);
+    doc.setFontSize(12);
+    const stats = selectedSubject === 'All Subjects' 
+      ? calculateSubjectStats(subjectData.flatMap(subject => subject.data || []))
+      : calculateSubjectStats(subjectData[0]?.data || []);
+    
+    doc.text(`Class Average: ${stats.classAverage.toFixed(2)}`, 30, 100);
+    doc.text(`Pass Percentage: ${stats.passPercentage.toFixed(2)}%`, 30, 110);
+    doc.text(`Total Students: ${stats.totalStudents}`, 30, 120);
+    doc.text(`Passed: ${stats.passCount}`, 30, 130);
+    doc.text(`Failed: ${stats.failCount}`, 30, 140);
+    doc.text(`Absent: ${stats.absentCount}`, 30, 150);
+
+    // Create pie chart canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 500;
+    canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    
+    // Set white background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw pie chart
+    const centerX = 150;  // Moved to left side
+    const centerY = canvas.height / 2;
+    const radius = 120;
+    
+    let currentAngle = 0;
+    const total = studentDistribution.reduce((acc, item) => acc + item.value, 0);
+    
+    // Draw pie slices
+    studentDistribution.forEach(item => {
+      const sliceAngle = (2 * Math.PI * item.value) / total;
+      
+      ctx.beginPath();
+      ctx.fillStyle = item.color;
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+      ctx.closePath();
+      ctx.fill();
+      
+      currentAngle += sliceAngle;
+    });
+
+    // Add legend
+    const legendX = 300;
+    const legendY = centerY - (studentDistribution.length * 20) / 2;
+    
+    ctx.textAlign = 'left';
+    ctx.font = '12px Arial';
+    
+    studentDistribution.forEach((item, index) => {
+      const y = legendY + (index * 25);
+      
+      // Draw color box
+      ctx.fillStyle = item.color;
+      ctx.fillRect(legendX, y - 8, 15, 15);
+      
+      // Draw text
+      ctx.fillStyle = '#000000';
+      ctx.fillText(
+        `${item.name.split('\n')[0]}: ${((item.value / total) * 100).toFixed(2)}%`,
+        legendX + 25,
+        y + 4
+      );
+    });
+
+    // Add pie chart to PDF
+    doc.text('Pass/Fail Distribution:', 20, 170);
+    doc.addImage(canvas.toDataURL(), 'PNG', 20, 180, 170, 100);
+
+    // Save the PDF
+    const fileName = selectedSubject === 'All Subjects' 
+      ? `${selectedTeacher}_all_subjects_report.pdf`
+      : `${selectedTeacher}_${selectedSubject}_report.pdf`;
+    
+    doc.save(fileName);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
       <Toaster position="top-center" expand={true} richColors />
@@ -320,55 +430,26 @@ export function TeacherResultAnalysisComponent() {
 
         {selectedTeacher && (
           <>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Total Students</CardTitle>
-                  <Users className="h-6 w-6 text-blue-200" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">
-                    {totalStudents}
-                  </div>
-                  <p className="text-sm text-blue-200">
-                    {selectedSubject === 'All Subjects' ? 'Across all subjects' : 'Current subject'}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-blue-500 to-blue-700 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Pass Rate</CardTitle>
-                  <GraduationCap className="h-6 w-6 text-blue-200" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">
-                    {classPerformance.passRate}%
-                  </div>
-                  <p className="text-sm text-blue-200">Current subject pass percentage</p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-blue-600 to-blue-800 text-white">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg font-medium">Subjects Taught</CardTitle>
-                  <BookOpen className="h-6 w-6 text-blue-200" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">{teacherSubjects.length}</div>
-                  <p className="text-sm text-blue-200">Number of subjects</p>
-                </CardContent>
-              </Card>
-            </div>
-
             <div className="grid gap-6 md:grid-cols-2">
+              {/* Pass/Fail Distribution Chart */}
               <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <div className="flex flex-col space-y-1.5">
                     <CardTitle className="text-lg font-medium">Pass/Fail Distribution</CardTitle>
                     <CardDescription>Distribution of student results</CardDescription>
                   </div>
-                  <PieChartIcon className="h-6 w-6 text-gray-500" />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                      onClick={generatePDF}
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Download Report
+                    </Button>
+                    <PieChartIcon className="h-6 w-6 text-gray-500" />
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -404,31 +485,73 @@ export function TeacherResultAnalysisComponent() {
                 </CardContent>
               </Card>
 
-              <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div className="flex flex-col space-y-1.5">
-                    <CardTitle className="text-lg font-medium">Class Performance</CardTitle>
-                    <CardDescription>Overall class metrics</CardDescription>
-                  </div>
-                  <TrendingUp className="h-6 w-6 text-gray-500" />
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm font-medium">Class Average</span>
-                      <span className="text-sm font-medium">{classPerformance.classAverage}%</span>
+              {/* Class Average Card */}
+              <div className="grid gap-6">
+                <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div className="flex flex-col space-y-1.5">
+                      <CardTitle className="text-lg font-medium">Class Average</CardTitle>
+                      <CardDescription>Average marks across all students</CardDescription>
                     </div>
-                    <Progress value={Number(classPerformance.classAverage)} className="h-2" />
-                  </div>
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm font-medium">Pass Rate</span>
-                      <span className="text-sm font-medium">{classPerformance.passRate}%</span>
+                    <BarChart3 className="h-6 w-6 text-gray-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <p className="text-4xl font-bold">{classPerformance.classAverage}%</p>
+                          <p className="text-sm text-muted-foreground">
+                            Overall class performance
+                          </p>
+                        </div>
+                        <div className={cn(
+                          "rounded-full p-3",
+                          Number(classPerformance.classAverage) >= 75 ? "bg-green-100 text-green-700" :
+                          Number(classPerformance.classAverage) >= 60 ? "bg-yellow-100 text-yellow-700" :
+                          "bg-red-100 text-red-700"
+                        )}>
+                          <BarChart3 className="h-8 w-8" />
+                        </div>
+                      </div>
+                      <Progress value={Number(classPerformance.classAverage)} className="h-2" style={{ '--progress-background': 'var(--green-500)' }} />
                     </div>
-                    <Progress value={Number(classPerformance.passRate)} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                {/* Pass/Absent/Fail Stats Card */}
+                <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div className="flex flex-col space-y-1.5">
+                      <CardTitle className="text-lg font-medium">Pass/Absent/Fail Stats</CardTitle>
+                      <CardDescription>Detailed performance breakdown</CardDescription>
+                    </div>
+                    <Users className="h-6 w-6 text-gray-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {studentDistribution.map((stat, index) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium" style={{ color: stat.color }}>
+                              {stat.name.split('\n')[0]}
+                            </p>
+                            <p className="text-2xl font-bold" style={{ color: stat.color }}>
+                              {stat.actualValue}
+                            </p>
+                          </div>
+                          <Progress 
+                            value={(stat.value / totalStudents) * 100} 
+                            className="h-2 w-[120px]"
+                            style={{
+                              ['--progress-background']: stat.color
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
 
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
@@ -507,39 +630,81 @@ export function TeacherResultAnalysisComponent() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {subjectData[0]?.data?.map((student, index) => {
-                        const internalMarks = student.internalMarks === 'A' ? 0 : Number(student.internalMarks);
-                        const externalMarks = student.externalMarks === 'A' ? 0 : Number(student.externalMarks);
-                        const totalMarks = student.totalMarks === 'AB' ? 'Absent' : student.totalMarks;
+                      {selectedSubject === 'All Subjects' ? (
+                        // Show students from all subjects
+                        subjectData?.flatMap((subject, subjectIndex) => 
+                          subject?.data?.map((student, studentIndex) => {
+                            const internalMarks = student.internalMarks === 'A' ? 0 : Number(student.internalMarks);
+                            const externalMarks = student.externalMarks === 'A' ? 0 : Number(student.externalMarks);
+                            const totalMarks = student.totalMarks === 'AB' ? 'Absent' : student.totalMarks;
 
-                        return (
-                          <TableRow key={index}>
-                            <TableCell>{student.studentName}</TableCell>
-                            <TableCell>{student.rollNo}</TableCell>
-                            <TableCell>
-                              <span className={student.result === 'FAIL' ? 'text-red-500 font-medium' : ''}>
-                                {student.internalMarks}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className={student.result === 'FAIL' ? 'text-red-500 font-medium' : ''}>
-                                {student.externalMarks}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              {totalMarks}
-                            </TableCell>
-                            <TableCell>
-                              <Badge 
-                                variant={student.result === 'PASS' ? 'success' : 'destructive'}
-                                className={student.result === 'PASS' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}
-                              >
-                                {student.result}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                            return (
+                              <TableRow key={`${subjectIndex}-${studentIndex}`}>
+                                <TableCell>{student.studentName}</TableCell>
+                                <TableCell className="font-medium">{student.rollNo}</TableCell>
+                                <TableCell>{subject.subjectDetails?.name || 'N/A'}</TableCell>
+                                <TableCell className="text-center">
+                                  {student.internalMarks === 'A' ? 'AB' : student.internalMarks}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {student.externalMarks === 'A' ? 'AB' : student.externalMarks}
+                                </TableCell>
+                                <TableCell className="text-center font-medium">
+                                  {totalMarks}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
+                                      student.result === 'PASS' && "bg-green-100 text-green-700",
+                                      student.result === 'FAIL' && "bg-red-100 text-red-700",
+                                      student.result === 'ABSENT' && "bg-purple-100 text-purple-700"
+                                    )}
+                                  >
+                                    {student.result}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )
+                      ) : (
+                        // Show students from selected subject
+                        subjectData[0]?.data?.map((student, index) => {
+                          const internalMarks = student.internalMarks === 'A' ? 0 : Number(student.internalMarks);
+                          const externalMarks = student.externalMarks === 'A' ? 0 : Number(student.externalMarks);
+                          const totalMarks = student.totalMarks === 'AB' ? 'Absent' : student.totalMarks;
+
+                          return (
+                            <TableRow key={index}>
+                              <TableCell>{student.studentName}</TableCell>
+                              <TableCell className="font-medium">{student.rollNo}</TableCell>
+                              <TableCell>{subjectData[0].subjectDetails?.name || 'N/A'}</TableCell>
+                              <TableCell className="text-center">
+                                {student.internalMarks === 'A' ? 'AB' : student.internalMarks}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.externalMarks === 'A' ? 'AB' : student.externalMarks}
+                              </TableCell>
+                              <TableCell className="text-center font-medium">
+                                {totalMarks}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
+                                    student.result === 'PASS' && "bg-green-100 text-green-700",
+                                    student.result === 'FAIL' && "bg-red-100 text-red-700",
+                                    student.result === 'ABSENT' && "bg-purple-100 text-purple-700"
+                                  )}
+                                >
+                                  {student.result}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>

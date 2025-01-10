@@ -7,7 +7,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { 
+  Select, 
+  SelectContent, 
+  SelectGroup, 
+  SelectItem, 
+  SelectLabel, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   AlertTriangle,
@@ -24,6 +32,7 @@ import ExcelJS from 'exceljs';
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf';
 import { toast } from "@/components/ui/use-toast";
+import { cn } from "@/lib/utils";
 
 const COLORS = {
   pass: '#22c55e',     // Green
@@ -57,6 +66,7 @@ export function ClassAnalyticsDashboardComponent() {
     needsImprovement: [],
     subjectPerformance: []
   })
+  const [selectedDivision, setSelectedDivision] = React.useState('all');
 
   const chartRef = React.useRef(null)
 
@@ -609,6 +619,26 @@ export function ClassAnalyticsDashboardComponent() {
     })
   }, [studentResults, selectedClass, selectedSemester, selectedSession, courses])
 
+  // Add this function to filter students based on division
+  const getFilteredStudents = () => {
+    if (selectedDivision === 'all') return studentResults;
+    
+    return studentResults.filter(student => {
+      switch(selectedDivision.toLowerCase()) {
+        case 'pass':
+          return student.result === 'PASS';
+        case 'fail':
+          return student.result === 'FAIL';
+        case 'supply':
+          return student.result === 'SUPPLY';
+        case 'withheld':
+          return student.result === 'WITHHELD';
+        default:
+          return false;
+      }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-blue-500 dark:from-gray-900 dark:via-blue-900 dark:to-blue-800">
       <div className="container mx-auto p-4 space-y-6">
@@ -864,81 +894,85 @@ export function ClassAnalyticsDashboardComponent() {
             </div>
 
             <Card className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-medium">Student Results Overview</CardTitle>
-                <CardDescription>Detailed performance of each student</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div>
+                  <CardTitle className="text-lg font-medium">Student Results Overview</CardTitle>
+                  <CardDescription>Detailed performance of each student</CardDescription>
+                </div>
+                <Select value={selectedDivision} onValueChange={setSelectedDivision}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by Division" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Division</SelectLabel>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="pass">Pass</SelectItem>
+                      <SelectItem value="fail">Fail</SelectItem>
+                      <SelectItem value="supply">Supply</SelectItem>
+                      <SelectItem value="withheld">Withheld</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </CardHeader>
               <CardContent>
                 <div className="relative overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[200px]">Name</TableHead>
-                        <TableHead className="text-right">Total Marks</TableHead>
-                        <TableHead className="text-right">Percentage</TableHead>
-                        <TableHead className="text-center">Division</TableHead>
-                        <TableHead className="text-center">Failed Subjects</TableHead>
+                        <TableHead className="w-[120px] text-center">Roll No</TableHead>
+                        <TableHead className="w-[200px] text-center">Name</TableHead>
+                        <TableHead className="w-[150px] text-center">Total Marks</TableHead>
+                        <TableHead className="w-[150px] text-center">Percentage</TableHead>
+                        <TableHead className="w-[150px] text-center pl-8">Division</TableHead>
+                        <TableHead className="w-[120px] text-center">Failed Subjects</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {studentResults.map((result, index) => {
+                      {getFilteredStudents().map((result, index) => {
                         // Calculate total marks and percentage
                         const totalMarks = result.subjects.reduce((acc, subject) => {
-                          if (subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A') {
-                            return acc;
-                          }
-                          return acc + (Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks));
+                          if (result.result === 'WITHHELD') return 0;
+                          const internalMarks = subject.internal_obtainedMarks === 'A' ? 0 : Number(subject.internal_obtainedMarks);
+                          const externalMarks = subject.external_obtainedMarks === 'A' ? 0 : Number(subject.external_obtainedMarks);
+                          return acc + internalMarks + externalMarks;
                         }, 0);
 
-                        const totalMaxMarks = result.subjects.reduce((acc, subject) => {
-                          return acc + (Number(subject.internal_maxMarks) + Number(subject.external_maxMarks));
-                        }, 0);
-
-                        const percentage = formatPercentage((totalMarks / totalMaxMarks) * 100);
+                        const maxMarks = result.subjects.length * 100;
+                        const percentage = ((totalMarks / maxMarks) * 100).toFixed(1);
 
                         // Calculate failed subjects
-                        const failedSubjects = result.subjects.reduce((acc, subject) => {
-                          const totalObtained = subject.internal_obtainedMarks === 'A' || subject.external_obtainedMarks === 'A'
-                            ? 0
-                            : Number(subject.internal_obtainedMarks) + Number(subject.external_obtainedMarks);
-                          const totalMin = Number(subject.internal_minMarks) + Number(subject.external_minMarks);
-                          return totalObtained < totalMin ? acc + 1 : acc;
-                        }, 0);
-
-                        // Determine result status
-                        let status = 'PASS';
-                        let statusColor = 'bg-green-500';
-                        
-                        if (result.isWithheld) {
-                          status = 'WITHHELD';
-                          statusColor = 'bg-yellow-500';
-                        } else if (failedSubjects > 0) {
-                          if (failedSubjects <= 2) {
-                            status = 'SUPPLY';
-                            statusColor = 'bg-orange-500';
-                          } else {
-                            status = 'FAIL';
-                            statusColor = 'bg-red-500';
-                          }
-                        }
+                        const failedSubjects = result.result === 'WITHHELD' ? '-' : 
+                          result.subjects.reduce((count, subject) => {
+                            const internalMarks = subject.internal_obtainedMarks === 'A' ? 0 : Number(subject.internal_obtainedMarks);
+                            const externalMarks = subject.external_obtainedMarks === 'A' ? 0 : Number(subject.external_obtainedMarks);
+                            const totalMarks = internalMarks + externalMarks;
+                            return count + (totalMarks < 40 ? 1 : 0);
+                          }, 0);
 
                         return (
                           <TableRow key={index}>
-                            <TableCell className="font-medium">{result.name}</TableCell>
-                            <TableCell className="text-right">
-                              {totalMarks === 0 ? 'NaN' : totalMarks}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {totalMarks === 0 ? 'NaN' : `${percentage}%`}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge className={`${statusColor} text-white`}>
-                                {status}
+                            <TableCell className="w-[120px] text-center">{result.rollNo}</TableCell>
+                            <TableCell className="w-[200px] text-center">{result.name}</TableCell>
+                            <TableCell className="w-[150px] text-center">{result.result === 'WITHHELD' ? 'NaN' : totalMarks}</TableCell>
+                            <TableCell className="w-[150px] text-center">{result.result === 'WITHHELD' ? 'NaN' : `${percentage}%`}</TableCell>
+                            <TableCell className="w-[150px] text-center pl-8">
+                              <Badge
+                                className={cn(
+                                  "capitalize",
+                                  result.result === 'PASS' && "bg-green-500 hover:bg-green-600",
+                                  result.result === 'FAIL' && "bg-red-500 hover:bg-red-600",
+                                  result.result === 'SUPPLY' && "bg-yellow-500 hover:bg-yellow-600",
+                                  result.result === 'WITHHELD' && "bg-orange-500 hover:bg-orange-600"
+                                )}
+                              >
+                                {result.result === 'PASS' ? 'Pass' :
+                                 result.result === 'FAIL' ? 'Fail' :
+                                 result.result === 'SUPPLY' ? 'Supply' :
+                                 result.result === 'WITHHELD' ? 'Withheld' : result.result.toLowerCase()}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center">
-                              {failedSubjects}
-                            </TableCell>
+                            <TableCell className="w-[120px] text-center">{failedSubjects}</TableCell>
                           </TableRow>
                         );
                       })}
