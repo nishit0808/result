@@ -1,10 +1,6 @@
-import { ResultAnalysisHomepageComponent } from '@/components/result-analysis-homepage'
+import { ResultAnalysisHomepageComponent } from "@/components/result-analysis-homepage"
 import React from 'react'
 
-export default function page() {
-  return (
-    <div>
-      <ResultAnalysisHomepageComponent/>
-    </div>
-  )
+export default function HomePage() {
+  return <ResultAnalysisHomepageComponent />
 }
